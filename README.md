@@ -1,10 +1,23 @@
 # cardBalance
 
-A Google Apps Script web app for tracking credit card spending, managing bills, and planning around your pay schedule.
+Credit Card & Paycheck Cash-Flow Planner
+
+cardBalance helps you track credit card spending and plan upcoming bills around your paychecks.
+
+Built on Google AppScript and Google Sheets
 
 ---
 
-## Getting Started
+## Quick Start Guide
+
+1. Copy the template spreadsheet
+2. Deploy the web app
+3. Complete the setup wizard
+4. Start logging transactions
+
+---
+
+## Full Installation Guide
 
 ### Step 1 — Copy the Sheet
 
@@ -24,7 +37,9 @@ A Google Apps Script web app for tracking credit card spending, managing bills, 
 3. Set the following:
    - Description: `cardBalance`
    - Execute as: **Me**
-   - Who has access: **Only myself** (or "Anyone" if sharing with others)
+   - Who has access:
+		• **Only myself** – for personal use
+		• Anyone with the link – if sharing with a spouse or partner
 4. Click **Deploy**
 5. Copy the web app URL — this is your personal app link
 6. Bookmark it for easy access
@@ -40,12 +55,24 @@ When you open the app for the first time, a welcome screen will appear. Click **
 Work through the steps in order:
 
 1. **Cards** — add each credit card you want to track, with an optional color
-2. **Expense Types** — add spending categories (e.g. Grocery, Gas, Other)
-3. **Budgets** — set a budget amount and frequency for each expense type
-4. **Pay Period** — choose your pay frequency and enter an anchor date (any past payday)
-5. **Bills** *(optional)* — add recurring bills to use the BillBalance feature
+2. **Expense Types and Budgets** — set a budget amount and frequency for each expense type (e.g. Grocery, Gas, Other)
+3. **Pay Period** — choose your pay frequency and enter an anchor date (any past payday)
+4. **Bills** *(optional)* — add recurring bills to use the BillBalance feature
 
 Click **Save Setup** when done. The app will generate your pay schedule and activate all features.
+
+---
+
+## How cardBalance Works ##
+
+cardBalance plans spending around your paycheck schedule.
+
+It combines:
+• your pay frequency
+• recurring bills
+• credit card transactions
+
+to calculate how much money remains available for your paychecks.
 
 ---
 
