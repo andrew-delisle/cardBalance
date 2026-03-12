@@ -38,8 +38,8 @@ Built on Google AppScript and Google Sheets
    - Description: `cardBalance`
    - Execute as: **Me**
    - Who has access:
-		• **Only myself** – for personal use
-		• Anyone with the link – if sharing with a spouse or partner
+   - **Only myself** – for personal use
+   - Anyone with the link – if sharing with a spouse or partner
 4. Click **Deploy**
 5. Copy the web app URL — this is your personal app link
 6. Bookmark it for easy access
@@ -68,9 +68,9 @@ Click **Save Setup** when done. The app will generate your pay schedule and acti
 cardBalance plans spending around your paycheck schedule.
 
 It combines:
-• your pay frequency
-• recurring bills
-• credit card transactions
+- your pay frequency
+- recurring bills
+- credit card transactions
 
 to calculate how much money remains available for your paychecks.
 
