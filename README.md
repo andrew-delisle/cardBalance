@@ -10,7 +10,7 @@ Built on Google Apps Script and Google Sheets.
 
 ## Quick Start Guide
 
-1. Copy the template spreadsheet
+1. [Copy the template spreadsheet](https://tinyurl.com/cardBalanceSheet)
 2. Run the installer from the cardBalance menu
 3. Deploy the web app
 4. Complete the setup wizard
@@ -22,7 +22,7 @@ Built on Google Apps Script and Google Sheets.
 
 ### Step 1 — Copy the Sheet
 
-1. Open the shared Google Sheet link
+1. [Open the shared Google Sheet link](https://tinyurl.com/cardBalanceSheet)
 2. Go to **File → Make a copy**
 3. Save it to your own Google Drive — this is your personal instance
 
