@@ -174,6 +174,10 @@ nav { position:sticky; bottom:0; flex-shrink:0; width:100%; height:5rem; backgro
 .bb-table tr.bb-total td { font-weight:700; border-top:2px solid var(--border2); color:var(--text); }
 .bb-table tr.bb-total td.amt { color:var(--accent); }
 .bb-due { font-size:.65rem; color:var(--muted); display:block; }
+.bb-paid-check { width:1rem; height:1rem; cursor:pointer; accent-color:var(--green); flex-shrink:0; margin-right:.35rem; }
+.bb-row-paid td:first-child { color:var(--green) !important; }
+.bb-row-paid .bb-due { color:var(--green); opacity:.7; }
+.bb-row-paid td.amt { color:var(--green) !important; text-decoration:line-through; opacity:.6; }
 
 /* ── REPORTS ── */
 .report-tabs { display:flex; background:var(--surface2); border-radius:.625rem; padding:.25rem; margin-bottom:1.25rem; gap:.25rem; }
@@ -2038,7 +2042,6 @@ function initBillBalancePicker() {
 }
 
 function loadBillBalance() {
-  // Show empty state if no bills configured
   if (appData && appData.bills && appData.bills.length === 0) {
     document.getElementById('billbalance-content').innerHTML =
       '<div class="empty"><div class="empty-icon">🧾</div><p>No bills set up yet.<br/>Add bills in Setup → Bills to use this feature.</p></div>';
@@ -2050,16 +2053,75 @@ function loadBillBalance() {
   var year  = parseInt(ym.split('-')[0]);
   var month = parseInt(ym.split('-')[1]);
   document.getElementById('billbalance-content').innerHTML = '<div class="spinner"></div>';
+
+  // Fetch bills data and paid state in parallel
+  var billsRes = null, paidRes = null;
+  function tryRender() {
+    if (billsRes !== null && paidRes !== null) renderBillBalance(billsRes, paidRes);
+  }
   google.script.run
-    .withSuccessHandler(renderBillBalance)
+    .withSuccessHandler(function(r) { billsRes = r; tryRender(); })
     .withFailureHandler(function(e) {
       document.getElementById('billbalance-content').innerHTML =
         '<div style="color:var(--red);padding:.75rem">' + esc((e && e.message) || 'Error') + '</div>';
     })
     .getBillsData(year, month);
+  google.script.run
+    .withSuccessHandler(function(r) { paidRes = r; tryRender(); })
+    .withFailureHandler(function() { paidRes = { paid: [] }; tryRender(); })
+    .getBillPaidState();
 }
 
-function renderBillBalance(res) {
+function toggleBillPaid(name, checkbox) {
+  var isPaid = checkbox.checked;
+  var row    = checkbox.closest('tr');
+  if (row) row.classList.toggle('bb-row-paid', isPaid);
+  // Recalculate visible totals
+  recalcBillTotals();
+  // Persist to server
+  google.script.run
+    .withFailureHandler(function() { /* silent */ })
+    .setBillPaid({ name: name, isPaid: isPaid });
+}
+
+function recalcBillTotals() {
+  var table = document.querySelector('.bb-table');
+  if (!table) return;
+  // Collect paycheck column indices from header
+  var headers = table.querySelectorAll('thead th');
+  var colCount = headers.length - 1; // exclude bill name col
+
+  // Sum unpaid amounts per paycheck column
+  var colTotals = [];
+  for (var i = 0; i < colCount; i++) colTotals.push(0);
+
+  var rows = table.querySelectorAll('tbody tr:not(.bb-total)');
+  rows.forEach(function(row) {
+    if (row.classList.contains('bb-row-paid')) return; // skip paid
+    var cells = row.querySelectorAll('td');
+    for (var c = 1; c < cells.length; c++) {
+      var txt = cells[c].textContent.replace(/[$,]/g, '').trim();
+      var val = parseFloat(txt);
+      if (!isNaN(val)) colTotals[c - 1] += val;
+    }
+  });
+
+  // Update total row
+  var totalRow = table.querySelector('tr.bb-total');
+  if (!totalRow) return;
+  var totalCells = totalRow.querySelectorAll('td');
+  var grandTotal = 0;
+  for (var j = 0; j < colCount; j++) {
+    if (totalCells[j + 1]) totalCells[j + 1].textContent = '$' + fmt(colTotals[j]);
+    grandTotal += colTotals[j];
+  }
+
+  // Update grand total footer
+  var footer = document.querySelector('.bb-grand-total');
+  if (footer) footer.textContent = '$' + fmt(grandTotal);
+}
+
+function renderBillBalance(res, paidState) {
   var content = document.getElementById('billbalance-content');
   if (!res || !res.success) {
     content.innerHTML = '<div style="color:var(--red);padding:.75rem">' + esc((res && res.error) || 'Error') + '</div>';
@@ -2073,22 +2135,40 @@ function renderBillBalance(res) {
     content.innerHTML = '<div class="empty" style="padding:1.5rem"><div class="empty-icon">&#128184;</div><p>No bills found.<br/>Add bills in Tools &#8594; Setup &#8594; Bills.</p></div>';
     return;
   }
+
+  var paid      = (paidState && paidState.paid) ? paidState.paid : [];
   var paychecks = res.paychecks;
   var bills     = res.bills;
+
   var h = '<div class="bb-table-wrap"><table class="bb-table"><thead><tr><th>Bill</th>';
   paychecks.forEach(function(p) { h += '<th>' + fmtDateLabel(p) + '</th>'; });
   h += '</tr></thead><tbody>';
+
   bills.forEach(function(b) {
-    h += '<tr><td>' + esc(b.name) + '<span class="bb-due">due ' + fmtDateLabel(b.dueDate) + '</span></td>';
+    var isPaid   = paid.indexOf(b.name) !== -1;
+    var rowClass = isPaid ? ' class="bb-row-paid"' : '';
+    var checked  = isPaid ? ' checked' : '';
+    h += '<tr' + rowClass + '>';
+    h += '<td><input type="checkbox" class="bb-paid-check"' + checked + ' onchange="toggleBillPaid(\'' + esc(b.name).replace(/'/g, "\\'") + '\', this)"/>' +
+         esc(b.name) + '<span class="bb-due">due ' + fmtDateLabel(b.dueDate) + '</span></td>';
     paychecks.forEach(function(p) {
       h += b.paycheck === p ? '<td class="amt">$' + fmt(b.amount) + '</td>' : '<td class="amt-empty">\u2014</td>';
     });
     h += '</tr>';
   });
+
+  // Calculate initial totals excluding paid bills
+  var colTotals = {};
+  paychecks.forEach(function(p) { colTotals[p] = 0; });
+  bills.forEach(function(b) {
+    if (paid.indexOf(b.name) === -1) colTotals[b.paycheck] = (colTotals[b.paycheck] || 0) + b.amount;
+  });
+  var grandTotal = paychecks.reduce(function(sum, p) { return sum + (colTotals[p] || 0); }, 0);
+
   h += '<tr class="bb-total"><td>Total</td>';
-  paychecks.forEach(function(p) { h += '<td class="amt">$' + fmt(res.totalsByPaycheck[p] || 0) + '</td>'; });
+  paychecks.forEach(function(p) { h += '<td class="amt">$' + fmt(colTotals[p] || 0) + '</td>'; });
   h += '</tr></tbody></table></div>';
-  h += '<div style="text-align:right;margin-top:.75rem;font-size:.8rem;color:var(--muted)">Grand total: <span style="font-family:var(--mono);font-weight:700;color:var(--text)">$' + fmt(res.grandTotal) + '</span></div>';
+  h += '<div style="text-align:right;margin-top:.75rem;font-size:.8rem;color:var(--muted)">Remaining: <span class="bb-grand-total" style="font-family:var(--mono);font-weight:700;color:var(--text)">$' + fmt(grandTotal) + '</span></div>';
   content.innerHTML = h;
 }
 

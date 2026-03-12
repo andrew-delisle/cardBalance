@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:'Plus Jakarta Sans',sans-serif; font-size:14px; color:#191c2c; background:#f5f6fa; padding:1.5rem; line-height:1.5; }
+
+.logo { font-size:1.4rem; font-weight:800; letter-spacing:-.02em; margin-bottom:1.25rem; }
+.logo .accent { color:#3b5bdb; }
+
+.card { background:#fff; border:1px solid #e0e2ef; border-radius:.875rem; padding:1.25rem; margin-bottom:1rem; }
+
+.summary { background:#e8f7f1; border:1px solid #b8e8d4; border-radius:.625rem; padding:.875rem 1rem; margin-bottom:1rem; font-size:.85rem; color:#1a6644; white-space:pre-line; line-height:1.8; }
+
+.badge { display:inline-block; padding:.2rem .6rem; border-radius:999px; font-size:.7rem; font-weight:700; letter-spacing:.03em; }
+.badge-ok  { background:#e8f7f1; color:#2a9466; }
+.badge-new { background:#edf0fd; color:#3b5bdb; }
+.badge-uptodate { background:#f0f0f0; color:#888; }
+
+h2 { font-size:1rem; font-weight:700; margin-bottom:.75rem; color:#191c2c; }
+h3 { font-size:.85rem; font-weight:700; color:#555a78; margin-bottom:.5rem; }
+
+.steps { display:flex; flex-direction:column; gap:.625rem; }
+.step  { display:flex; gap:.75rem; align-items:flex-start; }
+.step-num { width:1.75rem; height:1.75rem; border-radius:50%; background:#3b5bdb; color:#fff; font-size:.75rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:.1rem; }
+.step-body { flex:1; }
+.step-title { font-weight:600; font-size:.875rem; color:#191c2c; }
+.step-desc  { font-size:.8rem; color:#555a78; margin-top:.2rem; line-height:1.6; }
+.step-code  { display:inline-block; background:#edf0fd; color:#3b5bdb; border-radius:.3rem; padding:.1rem .4rem; font-family:monospace; font-size:.8rem; font-weight:600; }
+
+.divider { height:1px; background:#e0e2ef; margin:1rem 0; }
+
+.note { background:#fff8e1; border:1px solid #ffe082; border-radius:.5rem; padding:.75rem 1rem; font-size:.8rem; color:#7a5c00; margin-bottom:1rem; }
+
+.btn { display:block; width:100%; padding:.75rem; border:none; border-radius:.625rem; font-family:'Plus Jakarta Sans',sans-serif; font-size:.9rem; font-weight:700; cursor:pointer; text-align:center; transition:opacity .15s; }
+.btn-primary { background:#3b5bdb; color:#fff; }
+.btn-primary:hover { opacity:.9; }
+.btn-ghost { background:#f0f2ff; color:#3b5bdb; margin-top:.5rem; }
+.btn-ghost:hover { opacity:.8; }
+
+.version-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:.5rem; }
+.version-label { font-size:.8rem; color:#8e93ae; }
+.version-val   { font-size:.85rem; font-weight:600; color:#191c2c; }
+
+.uptodate { text-align:center; padding:1.5rem 0; }
+.uptodate .check { font-size:2.5rem; margin-bottom:.75rem; }
+.uptodate p { color:#555a78; font-size:.9rem; }
+
+a { color:#3b5bdb; text-decoration:none; font-weight:600; }
+a:hover { text-decoration:underline; }
+</style>
+</head>
+<body>
+
+<div class="logo"><span class="accent">card</span>Balance</div>
+
+<? if (mode === "install") { ?>
+
+  <? if (summary) { ?>
+    <div class="summary"><?= summary ?></div>
+  <? } ?>
+
+  <div class="card">
+    <h2>One more step — deploy your web app</h2>
+    <p style="font-size:.85rem;color:#555a78;margin-bottom:1rem">Your sheets are ready. Follow these steps to launch the cardBalance web app:</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="step-title">Open the Script Editor</div>
+          <div class="step-desc">Click <span class="step-code">Extensions</span> → <span class="step-code">Apps Script</span> in the menu bar above.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="step-title">Create a New Deployment</div>
+          <div class="step-desc">Click <span class="step-code">Deploy</span> → <span class="step-code">New deployment</span>. Click the gear icon and select <span class="step-code">Web app</span>.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="step-title">Configure Access</div>
+          <div class="step-desc">Set <span class="step-code">Execute as: Me</span> and <span class="step-code">Who has access: Only myself</span> (or Anyone if sharing). Click <span class="step-code">Deploy</span>.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <div class="step-title">Authorize & Copy Your URL</div>
+          <div class="step-desc">Click <span class="step-code">Authorize access</span> and follow the prompts. Copy the web app URL — bookmark it for easy access.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">💡 Your data is stored entirely in this spreadsheet. The web app URL is your personal access link — keep it safe.</div>
+
+  <button class="btn btn-primary" onclick="google.script.host.close()">Done — I've deployed the app</button>
+  <a href="https://github.com/andrew-delisle/cardBalance#readme" target="_blank">
+    <button class="btn btn-ghost">📖 View Full Documentation</button>
+  </a>
+
+<? } else if (mode === "update") { ?>
+
+  <? if (isUpToDate) { ?>
+
+    <div class="uptodate">
+      <div class="check">✅</div>
+      <h2>You're up to date!</h2>
+      <p>cardBalance <strong><?= version ?></strong> is the latest version.</p>
+    </div>
+    <button class="btn btn-primary" onclick="google.script.host.close()">Close</button>
+
+  <? } else { ?>
+
+    <div class="card">
+      <div class="version-row">
+        <span class="version-label">Current version</span>
+        <span class="version-val"><?= version ?> <span class="badge badge-uptodate">installed</span></span>
+      </div>
+      <div class="version-row">
+        <span class="version-label">Latest version</span>
+        <span class="version-val"><?= remoteVersion ?> <span class="badge badge-new">available</span></span>
+      </div>
+      <? if (releaseDate) { ?>
+        <div style="font-size:.8rem;color:#8e93ae;margin-top:.25rem">Released <?= releaseDate ?></div>
+      <? } ?>
+      <? if (releaseNotes) { ?>
+        <div class="divider"></div>
+        <h3>What's new</h3>
+        <p style="font-size:.85rem;color:#555a78"><?= releaseNotes ?></p>
+      <? } ?>
+    </div>
+
+    <div class="card">
+      <h2>How to update</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <div class="step-title">Open the Script Editor</div>
+            <div class="step-desc">Click <span class="step-code">Extensions</span> → <span class="step-code">Apps Script</span>.</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <div class="step-title">Replace Code.gs</div>
+            <div class="step-desc">Open <a href="<?= codeUrl ?>" target="_blank">Code.gs on GitHub</a>, copy all contents, and paste into your <span class="step-code">Code.gs</span> file. Save with <span class="step-code">Ctrl+S</span>.</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <div class="step-title">Replace Index.html</div>
+            <div class="step-desc">Open <a href="<?= htmlUrl ?>" target="_blank">Index.html on GitHub</a>, copy all contents, and paste into your <span class="step-code">Index.html</span> file. Save.</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <div class="step-body">
+            <div class="step-title">Redeploy</div>
+            <div class="step-desc">Click <span class="step-code">Deploy</span> → <span class="step-code">Manage deployments</span>. Click the pencil icon, set version to <span class="step-code">New version</span>, and click <span class="step-code">Deploy</span>.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">💡 Your data is never affected by updates — it lives in the spreadsheet, not the script.</div>
+
+    <button class="btn btn-primary" onclick="google.script.host.close()">Done — I've updated the app</button>
+
+  <? } ?>
+
+<? } ?>
+
+</body>
+</html>

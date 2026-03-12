@@ -4,6 +4,8 @@
 //  No hardcoded Spreadsheet ID needed.
 // ============================================================
 
+var APP_VERSION = "1.0.0";
+
 var SHEET = {
   TRANSACTIONS: "Transactions",
   PAYMENTS:     "Payments",
@@ -965,8 +967,57 @@ function saveBills(payload) {
 // (bills array added inline — see getAppData above, updated below)
 
 // ============================================================
-//  DIAGNOSTICS
+//  BILL PAID STATE
 // ============================================================
+function getBillPaidState() {
+  try {
+    var props = PropertiesService.getUserProperties();
+    var raw   = props.getProperty('billPaidState');
+    if (!raw) return { success: true, month: '', paid: [] };
+    var state = JSON.parse(raw);
+    // Auto-reset if stored month doesn't match current month
+    var now          = new Date();
+    var currentMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    if (state.month !== currentMonth) {
+      return { success: true, month: currentMonth, paid: [] };
+    }
+    return { success: true, month: state.month, paid: state.paid || [] };
+  } catch(err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function setBillPaid(payload) {
+  try {
+    var now          = new Date();
+    var currentMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    var props        = PropertiesService.getUserProperties();
+    var raw          = props.getProperty('billPaidState');
+    var state        = raw ? JSON.parse(raw) : { month: currentMonth, paid: [] };
+
+    // Reset if month rolled over
+    if (state.month !== currentMonth) {
+      state = { month: currentMonth, paid: [] };
+    }
+
+    var name   = payload.name;
+    var isPaid = payload.isPaid;
+    var idx    = state.paid.indexOf(name);
+
+    if (isPaid && idx === -1) {
+      state.paid.push(name);
+    } else if (!isPaid && idx !== -1) {
+      state.paid.splice(idx, 1);
+    }
+
+    props.setProperty('billPaidState', JSON.stringify(state));
+    return { success: true, paid: state.paid };
+  } catch(err) {
+    return { success: false, error: err.message };
+  }
+}
+
+
 function ping() {
   try {
     var ss     = getSpreadsheet();
