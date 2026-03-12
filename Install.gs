@@ -3,7 +3,7 @@
 //  Handles installation, updates, and the custom Sheets menu.
 // ============================================================
 
-var APP_VERSION  = "1.0.0";
+var APP_VERSION  = "1.1.0";
 var GITHUB_RAW   = "https://raw.githubusercontent.com/andrew-delisle/cardBalance/main/";
 var VERSION_URL  = GITHUB_RAW + "version.json";
 var DOCS_URL     = "https://github.com/andrew-delisle/cardBalance#readme";

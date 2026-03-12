@@ -4,7 +4,7 @@
 //  No hardcoded Spreadsheet ID needed.
 // ============================================================
 
-var APP_VERSION = "1.0.0";
+var APP_VERSION = "1.1.0";
 
 var SHEET = {
   TRANSACTIONS: "Transactions",
