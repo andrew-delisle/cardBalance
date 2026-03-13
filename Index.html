@@ -6,6 +6,7 @@
 <title>cardBalance</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 16px; }
@@ -56,6 +57,8 @@ nav { position:sticky; bottom:0; flex-shrink:0; width:100%; height:5rem; backgro
 .amount-wrap input { padding-left:2rem; font-family:var(--mono); font-size:1.4rem !important; }
 .select-wrap { position:relative; }
 .select-wrap::after { content:""; position:absolute; right:1rem; top:50%; transform:translateY(-50%); border-left:5px solid transparent; border-right:5px solid transparent; border-top:6px solid var(--sub); pointer-events:none; }
+.txn-controls .select-wrap::after { display:none; }
+.txn-controls .select-wrap select { -webkit-appearance:auto; appearance:auto; }
 .btn { display:flex; align-items:center; justify-content:center; width:100%; padding:.9rem 1rem; min-height:3.25rem; border:none; border-radius:.625rem; font-family:var(--sans); font-size:1rem; font-weight:700; cursor:pointer; transition:opacity .15s,transform .1s; -webkit-tap-highlight-color:transparent; }
 .btn:active { transform:scale(.98); opacity:.85; }
 .btn-primary { background:var(--accent); color:#fff; }
@@ -103,6 +106,28 @@ nav { position:sticky; bottom:0; flex-shrink:0; width:100%; height:5rem; backgro
 .swipe-action svg { width:1.25rem; height:1.25rem; stroke:currentColor; stroke-width:2; fill:none; stroke-linecap:round; stroke-linejoin:round; }
 .swipe-edit   { background:#3b5bdb; color:#fff; }
 .swipe-delete { background:var(--red); color:#fff; }
+.txn-controls { margin-bottom:.75rem; }
+.txn-controls-row { display:flex; align-items:center; gap:.4rem; }
+.txn-controls .select-wrap select { padding:.45rem .5rem; font-size:.8rem; padding-right:1.5rem; }
+.txn-filter-btn { flex-shrink:0; display:flex; align-items:center; gap:.35rem; background:var(--surface); border:1px solid var(--border); border-radius:.5rem; padding:.4rem .75rem; font-family:var(--sans); font-size:.8rem; font-weight:600; color:var(--sub); cursor:pointer; white-space:nowrap; }
+.txn-filter-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+.txn-refresh-btn { flex-shrink:0; display:flex; align-items:center; justify-content:center; background:var(--surface); border:1px solid var(--border); border-radius:.5rem; padding:.4rem .55rem; cursor:pointer; color:var(--sub); }
+.txn-refresh-btn:active { opacity:.6; }
+.txn-refresh-btn.spinning svg { animation:spin .7s linear infinite; }
+body.mobile-portrait  .txn-refresh-btn { display:none; }
+body.mobile-landscape .txn-refresh-btn { display:none; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.txn-filter-panel { display:flex; flex-direction:column; gap:.5rem; padding:.75rem; background:var(--surface2); border:1px solid var(--border); border-radius:.625rem; margin-top:.5rem; }
+.desktop-row-actions { display:none; }
+body.desktop .txn-row-actions { display:none; }
+body.desktop .desktop-row-actions { display:flex; gap:.4rem; flex-shrink:0; align-items:center; }
+body.desktop .txn-row.swiped .txn-row-inner { transform:none; }
+.dr-btn { display:flex; align-items:center; justify-content:center; border:none; border-radius:.45rem; padding:.3rem .55rem; cursor:pointer; font-size:.7rem; font-weight:700; font-family:var(--sans); gap:.25rem; }
+.dr-edit   { background:#e8edff; color:#3b5bdb; }
+.dr-delete { background:#fff0f0; color:var(--red); }
+.dr-btn svg { width:.9rem; height:.9rem; stroke:currentColor; stroke-width:2.2; fill:none; stroke-linecap:round; stroke-linejoin:round; }
+.pull-indicator { display:flex; align-items:center; justify-content:center; height:0; overflow:hidden; transition:height .2s; color:var(--muted); font-size:.8rem; gap:.5rem; }
+.pull-indicator svg { width:1rem; height:1rem; stroke:currentColor; fill:none; stroke-width:2; }
 
 /* Skeleton loader */
 .skeleton { background:var(--surface); border-radius:.875rem; margin-bottom:.75rem; overflow:hidden; }
@@ -180,8 +205,13 @@ nav { position:sticky; bottom:0; flex-shrink:0; width:100%; height:5rem; backgro
 .bb-row-paid td.amt { color:var(--green) !important; text-decoration:line-through; opacity:.6; }
 
 /* ── REPORTS ── */
-.report-tabs { display:flex; background:var(--surface2); border-radius:.625rem; padding:.25rem; margin-bottom:1.25rem; gap:.25rem; }
-.report-tab { flex:1; padding:.5rem; border:none; border-radius:.4rem; background:none; font-family:var(--sans); font-size:.75rem; font-weight:600; color:var(--muted); cursor:pointer; }
+.report-filter-bar { background:var(--surface); border:1px solid var(--border); border-radius:.875rem; padding:.875rem 1rem; margin-bottom:1rem; display:flex; flex-direction:column; gap:.625rem; }
+.report-filter-row { display:flex; gap:.75rem; align-items:flex-end; }
+.report-custom-dates { display:flex; gap:.75rem; }
+.filter-label { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); display:block; margin-bottom:.3rem; }
+.report-date-display { font-size:.75rem; color:var(--muted); font-weight:500; }
+.report-tabs { display:flex; background:var(--surface2); border-radius:.625rem; padding:.25rem; margin-bottom:1.25rem; gap:.25rem; overflow-x:auto; }
+.report-tab { flex-shrink:0; flex:1; padding:.5rem; border:none; border-radius:.4rem; background:none; font-family:var(--sans); font-size:.75rem; font-weight:600; color:var(--muted); cursor:pointer; white-space:nowrap; }
 .report-tab.active { background:var(--surface); color:var(--accent); box-shadow:0 1px 3px rgba(0,0,0,.1); }
 .report-panel { display:none; }
 .report-panel.active { display:block; }
@@ -305,15 +335,15 @@ body.desktop #billbalance-card { margin-top:0 !important; }
 body.desktop #billbalance-body { display:block !important; }
 body.desktop .billbalance-toggle { display:none; }
 
-/* ── DESKTOP: REPORTS ALL PANELS VISIBLE ── */
-body.desktop #page-reports .report-tabs { display:none; }
+/* ── DESKTOP: REPORTS ── */
 body.desktop #page-reports.active { display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; align-items:start; }
-body.desktop #page-reports .page-title { grid-column:1/-1; }
-body.desktop #page-reports .month-picker { grid-column:1/-1; }
-/* BVA left column, charts stacked in right column */
-body.desktop #report-bva-panel   { display:block !important; grid-column:1; grid-row:2; }
-body.desktop #report-chart-panel { display:block !important; grid-column:2; grid-row:2; }
-body.desktop #report-trend-panel { display:block !important; grid-column:2; grid-row:3; }
+body.desktop #page-reports .page-title    { grid-column:1/-1; }
+body.desktop #page-reports .report-filter-bar { grid-column:1/-1; }
+body.desktop #page-reports #report-panel-tabs { grid-column:1/-1; display:none; }
+body.desktop #report-bva-panel      { display:block !important; grid-column:1; }
+body.desktop #report-cards-panel    { display:block !important; grid-column:2; }
+body.desktop #report-cashflow-panel { display:block !important; grid-column:1; }
+body.desktop #report-trend-panel    { display:block !important; grid-column:2; }
 
 /* ── DESKTOP: TOOLS TWO-COLUMN ── */
 body.desktop #page-tools.active { display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; align-items:start; }
@@ -380,7 +410,47 @@ body.mobile-landscape .snap-value { font-size:1rem; }
       </div>
     </div>
     <div id="txn-right-col">
-      <div class="page-title" style="font-size:1.1rem;margin-bottom:.75rem">Payables</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
+        <div class="page-title" style="font-size:1.1rem;margin-bottom:0">Payables</div>
+      </div>
+      <div class="txn-controls" id="desktop-txn-controls">
+        <div class="txn-controls-row">
+          <div class="select-wrap" style="flex:1">
+            <select id="desktop-sort-select" onchange="applyTxnControls('desktop')">
+              <option value="date-desc">Date ↓</option>
+              <option value="date-asc">Date ↑</option>
+              <option value="amount-desc">Amount ↓</option>
+              <option value="amount-asc">Amount ↑</option>
+              <option value="card-asc">Card A–Z</option>
+              <option value="type-asc">Type A–Z</option>
+            </select>
+          </div>
+          <button class="txn-filter-btn" id="desktop-filter-btn" onclick="toggleFilterPanel('desktop')">
+            <svg viewBox="0 0 24 24" style="width:1rem;height:1rem;stroke:currentColor;fill:none;stroke-width:2;vertical-align:middle"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+            Filter
+          </button>
+          <button class="txn-refresh-btn" onclick="triggerRefresh()" title="Refresh">
+            <svg viewBox="0 0 24 24" style="width:1rem;height:1rem;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          </button>
+        </div>
+        <div class="txn-filter-panel" id="desktop-filter-panel" style="display:none">
+          <div class="select-wrap">
+            <select id="desktop-filter-card" onchange="applyTxnControls('desktop')">
+              <option value="">All Cards</option>
+            </select>
+          </div>
+          <div class="select-wrap">
+            <select id="desktop-filter-type" onchange="applyTxnControls('desktop')">
+              <option value="">All Types</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:.5rem">
+            <input type="date" id="desktop-filter-start" onchange="applyTxnControls('desktop')" style="flex:1;border:1px solid var(--border);border-radius:.5rem;padding:.4rem .5rem;font-family:var(--sans);font-size:.8rem;background:var(--surface);color:var(--text);outline:none"/>
+            <input type="date" id="desktop-filter-end"   onchange="applyTxnControls('desktop')" style="flex:1;border:1px solid var(--border);border-radius:.5rem;padding:.4rem .5rem;font-family:var(--sans);font-size:.8rem;background:var(--surface);color:var(--text);outline:none"/>
+          </div>
+          <button class="btn btn-ghost" style="width:100%;font-size:.8rem;padding:.4rem" onclick="clearTxnFilters('desktop')">Clear Filters</button>
+        </div>
+      </div>
       <div id="desktop-payables-panel">
         <div class="skeleton"><div class="skeleton-inner"></div></div>
         <div class="skeleton"><div class="skeleton-inner"></div></div>
@@ -401,6 +471,48 @@ body.mobile-landscape .snap-value { font-size:1rem; }
   <!-- PAYABLES (mobile only) -->
   <section id="page-payments" class="page">
     <div class="page-title">Payables</div>
+    <div class="txn-controls" id="mobile-txn-controls">
+      <div class="txn-controls-row">
+        <div class="select-wrap" style="flex:1">
+          <select id="mobile-sort-select" onchange="applyTxnControls('mobile')">
+            <option value="date-desc">Date ↓</option>
+            <option value="date-asc">Date ↑</option>
+            <option value="amount-desc">Amount ↓</option>
+            <option value="amount-asc">Amount ↑</option>
+            <option value="card-asc">Card A–Z</option>
+            <option value="type-asc">Type A–Z</option>
+          </select>
+        </div>
+        <button class="txn-filter-btn" id="mobile-filter-btn" onclick="toggleFilterPanel('mobile')">
+          <svg viewBox="0 0 24 24" style="width:1rem;height:1rem;stroke:currentColor;fill:none;stroke-width:2;vertical-align:middle"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+          Filter
+        </button>
+        <button class="txn-refresh-btn" onclick="triggerRefresh()" title="Refresh">
+          <svg viewBox="0 0 24 24" style="width:1rem;height:1rem;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        </button>
+      </div>
+      <div class="txn-filter-panel" id="mobile-filter-panel" style="display:none">
+        <div class="select-wrap">
+          <select id="mobile-filter-card" onchange="applyTxnControls('mobile')">
+            <option value="">All Cards</option>
+          </select>
+        </div>
+        <div class="select-wrap">
+          <select id="mobile-filter-type" onchange="applyTxnControls('mobile')">
+            <option value="">All Types</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:.5rem">
+          <input type="date" id="mobile-filter-start" onchange="applyTxnControls('mobile')" placeholder="Start" style="flex:1;border:1px solid var(--border);border-radius:.5rem;padding:.4rem .5rem;font-family:var(--sans);font-size:.8rem;background:var(--surface);color:var(--text);outline:none"/>
+          <input type="date" id="mobile-filter-end"   onchange="applyTxnControls('mobile')" placeholder="End"   style="flex:1;border:1px solid var(--border);border-radius:.5rem;padding:.4rem .5rem;font-family:var(--sans);font-size:.8rem;background:var(--surface);color:var(--text);outline:none"/>
+        </div>
+        <button class="btn btn-ghost" style="width:100%;font-size:.8rem;padding:.4rem" onclick="clearTxnFilters('mobile')">Clear Filters</button>
+      </div>
+    </div>
+    <div id="pull-indicator" class="pull-indicator">
+      <svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      Release to refresh
+    </div>
     <div id="payments-list">
       <div class="skeleton"><div class="skeleton-inner"></div></div>
       <div class="skeleton"><div class="skeleton-inner"></div></div>
@@ -438,19 +550,49 @@ body.mobile-landscape .snap-value { font-size:1rem; }
   <!-- REPORTS -->
   <section id="page-reports" class="page">
     <div class="page-title">Reports</div>
-    <div class="report-tabs">
-      <button class="report-tab active" id="rtab-bva"   onclick="showReportTab('bva')">Budget vs Actual</button>
-      <button class="report-tab"        id="rtab-chart" onclick="showReportTab('chart')">Allocation</button>
-      <button class="report-tab"        id="rtab-trend" onclick="showReportTab('trend')">Trend</button>
+
+    <!-- DATE FILTER BAR -->
+    <div class="report-filter-bar">
+      <div class="report-filter-row">
+        <div class="field" style="margin:0;flex:1">
+          <label class="filter-label">Date Range</label>
+          <div class="select-wrap">
+            <select id="report-preset" onchange="onReportPresetChange()">
+              <option value="this-period">This Pay Period</option>
+              <option value="last-period">Last Pay Period</option>
+              <option value="this-month">This Month</option>
+              <option value="last-month">Last Month</option>
+              <option value="last-30">Last 30 Days</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="report-custom-dates" id="report-custom-dates" style="display:none">
+        <div class="field" style="margin:0;flex:1">
+          <label class="filter-label">Start</label>
+          <input type="date" id="report-start-date" onchange="loadReports()"/>
+        </div>
+        <div class="field" style="margin:0;flex:1">
+          <label class="filter-label">End</label>
+          <input type="date" id="report-end-date" onchange="loadReports()"/>
+        </div>
+      </div>
+      <div id="report-date-display" class="report-date-display"></div>
     </div>
-    <div class="month-picker">
-      <div><div class="month-picker-label">Viewing month</div>
-      <select id="report-month-picker" onchange="loadReports()"><option>Loading...</option></select></div>
+
+    <!-- PANEL SELECTOR -->
+    <div class="report-tabs" id="report-panel-tabs">
+      <button class="report-tab active" id="rtab-bva"      onclick="showReportTab('bva')">Budget vs Actual</button>
+      <button class="report-tab"        id="rtab-cards"    onclick="showReportTab('cards')">By Card</button>
+      <button class="report-tab"        id="rtab-cashflow" onclick="showReportTab('cashflow')">Cash Flow</button>
+      <button class="report-tab"        id="rtab-trend"    onclick="showReportTab('trend')">Trend</button>
     </div>
-    <!-- BVA full-width on desktop; chart + trend side-by-side -->
-    <div id="report-bva-panel"   class="report-panel active"><div class="spinner"></div></div>
-    <div id="report-chart-panel" class="report-panel"></div>
-    <div id="report-trend-panel" class="report-panel"></div>
+
+    <div id="report-bva-panel"      class="report-panel active"><div class="spinner"></div></div>
+    <div id="report-cards-panel"    class="report-panel"></div>
+    <div id="report-cashflow-panel" class="report-panel"></div>
+    <div id="report-trend-panel"    class="report-panel"></div>
   </section>
 
   <!-- TOOLS -->
@@ -906,11 +1048,12 @@ function setToday(id) {
 }
 
 // ── BATCH LOAD ─────────────────────────────────────────────────
-function loadAppData() {
+function loadAppData(onComplete) {
   google.script.run
     .withSuccessHandler(function(res) {
       if (!res || !res.success) {
         showToast((res && res.error) || 'Failed to load app data', 'error');
+        if (onComplete) onComplete();
         return;
       }
       appData    = res;
@@ -924,6 +1067,7 @@ function loadAppData() {
       fillSelect('txn-card', res.cards, 'Select card\u2026');
       fillSelect('txn-type', res.expenseTypes, 'Select type\u2026');
       renderPayables(res.transactions || []);
+      populateTxnFilterDropdowns();
       populateSetup(res);
       checkIsConfigured(res);
       updateStepIndicators(res);
@@ -934,12 +1078,14 @@ function loadAppData() {
         ls.style.opacity = '0';
         setTimeout(function() { ls.style.display = 'none'; }, 500);
       }
+      if (onComplete) onComplete();
     })
     .withFailureHandler(function(e) {
       showToast('Load error: ' + ((e && e.message) || 'unknown'), 'error');
       // Remove loading screen even on error
       var ls = document.getElementById('loading-screen');
       if (ls) { ls.style.opacity = '0'; setTimeout(function() { ls.style.display = 'none'; }, 500); }
+      if (onComplete) onComplete();
     })
     .getAppData();
 }
@@ -1032,8 +1178,105 @@ function submitTransaction() {
 }
 
 // ── PAYABLES ───────────────────────────────────────────────────
+// ── TXN SORT / FILTER STATE ────────────────────────────────────
+var txnSortKey    = 'date-desc';
+var txnFilterCard = '';
+var txnFilterType = '';
+var txnFilterStart = '';
+var txnFilterEnd   = '';
+
+function populateTxnFilterDropdowns() {
+  if (!appData) return;
+  var cards = (appData.cards || []);
+  var types = [];
+  (appData.transactions || []).forEach(function(t) {
+    if (types.indexOf(t.expenseType) === -1) types.push(t.expenseType);
+  });
+  types.sort();
+  ['mobile','desktop'].forEach(function(pfx) {
+    var cf = document.getElementById(pfx + '-filter-card');
+    var tf = document.getElementById(pfx + '-filter-type');
+    if (cf) {
+      cf.innerHTML = '<option value="">All Cards</option>';
+      cards.forEach(function(c) { cf.innerHTML += '<option value="' + esc(c) + '">' + esc(c) + '</option>'; });
+      cf.value = txnFilterCard;
+    }
+    if (tf) {
+      tf.innerHTML = '<option value="">All Types</option>';
+      types.forEach(function(t) { tf.innerHTML += '<option value="' + esc(t) + '">' + esc(t) + '</option>'; });
+      tf.value = txnFilterType;
+    }
+  });
+}
+
+function syncTxnControls() {
+  ['mobile','desktop'].forEach(function(pfx) {
+    var ss = document.getElementById(pfx + '-sort-select');
+    var fc = document.getElementById(pfx + '-filter-card');
+    var ft = document.getElementById(pfx + '-filter-type');
+    var fs = document.getElementById(pfx + '-filter-start');
+    var fe = document.getElementById(pfx + '-filter-end');
+    if (ss) ss.value = txnSortKey;
+    if (fc) fc.value = txnFilterCard;
+    if (ft) ft.value = txnFilterType;
+    if (fs) fs.value = txnFilterStart;
+    if (fe) fe.value = txnFilterEnd;
+  });
+  var hasFilter = txnFilterCard || txnFilterType || txnFilterStart || txnFilterEnd;
+  ['mobile','desktop'].forEach(function(pfx) {
+    var btn = document.getElementById(pfx + '-filter-btn');
+    if (btn) btn.classList.toggle('active', !!hasFilter);
+  });
+}
+
+function applyTxnControls(pfx) {
+  var ss = document.getElementById(pfx + '-sort-select');
+  var fc = document.getElementById(pfx + '-filter-card');
+  var ft = document.getElementById(pfx + '-filter-type');
+  var fs = document.getElementById(pfx + '-filter-start');
+  var fe = document.getElementById(pfx + '-filter-end');
+  if (ss) txnSortKey    = ss.value;
+  if (fc) txnFilterCard  = fc.value;
+  if (ft) txnFilterType  = ft.value;
+  if (fs) txnFilterStart = fs.value;
+  if (fe) txnFilterEnd   = fe.value;
+  log('applyTxnControls', 'pfx=' + pfx + ' sort=' + txnSortKey + ' card=' + txnFilterCard + ' type=' + txnFilterType + ' start=' + txnFilterStart + ' end=' + txnFilterEnd);
+  syncTxnControls();
+  if (appData) renderPayables(appData.transactions || []);
+}
+
+function toggleFilterPanel(pfx) {
+  var panel = document.getElementById(pfx + '-filter-panel');
+  var btn   = document.getElementById(pfx + '-filter-btn');
+  if (!panel) return;
+  var open = panel.style.display !== 'none';
+  // Sync both panels together
+  ['mobile','desktop'].forEach(function(p) {
+    var pa = document.getElementById(p + '-filter-panel');
+    if (pa) pa.style.display = open ? 'none' : 'flex';
+  });
+  if (btn) btn.classList.toggle('active', !open);
+  var otherBtn = document.getElementById((pfx === 'mobile' ? 'desktop' : 'mobile') + '-filter-btn');
+  if (otherBtn) otherBtn.classList.toggle('active', !open);
+}
+
+function clearTxnFilters(pfx) {
+  txnFilterCard = ''; txnFilterType = ''; txnFilterStart = ''; txnFilterEnd = '';
+  syncTxnControls();
+  if (appData) renderPayables(appData.transactions || []);
+}
+
+function triggerRefresh() {
+  // Spin both refresh buttons
+  document.querySelectorAll('.txn-refresh-btn').forEach(function(b) { b.classList.add('spinning'); });
+  loadAppData(function() {
+    document.querySelectorAll('.txn-refresh-btn').forEach(function(b) { b.classList.remove('spinning'); });
+  });
+}
+
 function refreshPayables() {
   if (appData) {
+    populateTxnFilterDropdowns();
     renderPayables(appData.transactions || []);
   }
 }
@@ -1044,20 +1287,43 @@ function renderPayables(txns) {
   var desktopList = document.getElementById('desktop-payables-panel');
   if (!list && !desktopList) return;
 
-  if (!txns || !txns.length) {
-    var emptyHtml = '<div class="empty"><div class="empty-icon">\u2705</div><p>No outstanding transactions.<br/>You\'re all caught up!</p></div>';
+  // ── FILTER ──
+  var filtered = (txns || []).filter(function(t) {
+    if (txnFilterCard  && t.card        !== txnFilterCard)  return false;
+    if (txnFilterType  && t.expenseType !== txnFilterType)  return false;
+    if (txnFilterStart && t.date < txnFilterStart)          return false;
+    if (txnFilterEnd   && t.date > txnFilterEnd)            return false;
+    return true;
+  });
+
+  // ── SORT ──
+  log('renderPayables', 'sort=' + txnSortKey + ' total=' + txns.length + ' filtered=' + filtered.length + (filtered[0] ? ' sample.date=' + filtered[0].date : ''));
+  filtered.sort(function(a, b) {
+    switch (txnSortKey) {
+      case 'date-asc':    return (a.date || '').localeCompare(b.date || '');
+      case 'date-desc':   return (b.date || '').localeCompare(a.date || '');
+      case 'amount-desc': return (b.amountOwed || 0) - (a.amountOwed || 0);
+      case 'amount-asc':  return (a.amountOwed || 0) - (b.amountOwed || 0);
+      case 'card-asc':    return (a.card || '').localeCompare(b.card || '');
+      case 'type-asc':    return (a.expenseType || '').localeCompare(b.expenseType || '');
+      default:            return (b.date || '').localeCompare(a.date || '');
+    }
+  });
+
+  if (!filtered.length) {
+    var emptyHtml = txns && txns.length
+      ? '<div class="empty"><div class="empty-icon">🔍</div><p>No transactions match your filters.</p></div>'
+      : '<div class="empty"><div class="empty-icon">✅</div><p>No outstanding transactions.<br/>You\'re all caught up!</p></div>';
     if (list)        list.innerHTML        = emptyHtml;
     if (desktopList) desktopList.innerHTML = emptyHtml;
     updatePayBar();
     return;
   }
 
-  txns.sort(function(a, b) { return (a.transactionDate || '').localeCompare(b.transactionDate || ''); });
-
   if (list)        list.innerHTML        = '';
   if (desktopList) desktopList.innerHTML = '';
 
-  txns.forEach(function(t) {
+  filtered.forEach(function(t) {
     txnMap[t.transactionID] = t;
 
     function makeRow(targetList, prefix) {
@@ -1070,11 +1336,7 @@ function renderPayables(txns) {
         el.style.borderLeftColor = color;
         el.style.background = hexToTint(color, 0.12);
       }
-
-      // Re-apply selection state when re-rendering
-      if (selected[t.transactionID]) {
-        el.classList.add('selected');
-      }
+      if (selected[t.transactionID]) el.classList.add('selected');
 
       attachSwipe(el, t.transactionID);
 
@@ -1085,8 +1347,18 @@ function renderPayables(txns) {
               '<div class="txn-row-card">' + esc(t.card) + '</div>' +
               '<div class="txn-row-meta">' + esc(t.expenseType) + ' \u00b7 ' + esc(t.transactionDate) + '</div>' +
             '</div>' +
-            '<div class="txn-row-amount">' +
-              '<div class="owed-value">$' + t.amountOwed.toFixed(2) + '</div>' +
+            '<div style="display:flex;align-items:center;gap:.5rem">' +
+              '<div class="txn-row-amount"><div class="owed-value">$' + t.amountOwed.toFixed(2) + '</div></div>' +
+              '<div class="desktop-row-actions">' +
+                '<button class="dr-btn dr-edit" onclick="event.stopPropagation();openEditSheet(\'' + t.transactionID + '\')">' +
+                  '<svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>' +
+                  'Edit' +
+                '</button>' +
+                '<button class="dr-delete dr-btn" onclick="event.stopPropagation();openDeleteDialog(\'' + t.transactionID + '\')">' +
+                  '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>' +
+                  'Delete' +
+                '</button>' +
+              '</div>' +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -1143,6 +1415,56 @@ function attachSwipe(el, id) {
     }
   }, { passive: true });
 }
+
+// ── PULL-TO-REFRESH ───────────────────────────────────────────
+(function() {
+  var startY = 0, pulling = false, triggered = false;
+  var THRESHOLD = 72;
+
+  function getList() {
+    // Only active on the payments page
+    var page = document.getElementById('page-payments');
+    if (!page || !page.classList.contains('active')) return null;
+    return document.getElementById('payments-list');
+  }
+
+  document.addEventListener('touchstart', function(e) {
+    var list = getList();
+    if (!list) return;
+    var container = list.parentElement;
+    // Only start pull if we're at the top
+    if (container.scrollTop <= 0 || list.scrollTop <= 0) {
+      startY   = e.touches[0].clientY;
+      pulling  = true;
+      triggered = false;
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!pulling) return;
+    var dy = e.touches[0].clientY - startY;
+    if (dy <= 0) { pulling = false; return; }
+    var indicator = document.getElementById('pull-indicator');
+    if (indicator) {
+      var h = Math.min(dy * 0.5, 48);
+      indicator.style.height = h + 'px';
+      if (dy > THRESHOLD && !triggered) indicator.style.opacity = '1';
+      else indicator.style.opacity = Math.min(dy / THRESHOLD, 1).toString();
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchend', function(e) {
+    if (!pulling) return;
+    pulling = false;
+    var dy  = e.changedTouches[0].clientY - startY;
+    var indicator = document.getElementById('pull-indicator');
+    if (indicator) { indicator.style.height = '0'; indicator.style.opacity = '0'; }
+    if (dy > THRESHOLD && !triggered) {
+      triggered = true;
+      triggerRefresh();
+    }
+  }, { passive: true });
+})();
 
 document.addEventListener('touchstart', function(e) {
   if (!e.target.closest('.txn-row')) {
@@ -1365,29 +1687,34 @@ function submitPayments() {
   var payDate = document.getElementById('pay-date').value;
   if (!payDate) { showToast('Please select a payment date', 'error'); return; }
 
+  // Filter to IDs that exist in txnMap
+  var validIds = ids.filter(function(id) { return !!txnMap[id]; });
+  if (!validIds.length) { showToast('No valid transactions selected', 'error'); return; }
+
   var btn = document.getElementById('sheet-submit-btn');
   btn.disabled = true; btn.textContent = 'Saving\u2026';
 
-  var errors   = [];
-  var pending  = ids.length;
-  var done     = 0;
+  var errors = [];
+  var idx    = 0;
 
-  ids.forEach(function(id) {
-    var t = txnMap[id];
-    if (!t) { pending--; return; }
+  function processNext() {
+    if (idx >= validIds.length) { finishPayments(errors); return; }
+    var id = validIds[idx++];
+    var t  = txnMap[id];
+    btn.textContent = 'Saving ' + idx + ' of ' + validIds.length + '\u2026';
     google.script.run
       .withSuccessHandler(function(res) {
-        done++;
-        if (!res || !res.success) errors.push(id + ': ' + ((res && res.error) || 'unknown'));
-        if (done === pending) finishPayments(errors);
+        if (!res || !res.success) errors.push((res && res.error) || 'Unknown error on txn ' + id);
+        processNext();
       })
       .withFailureHandler(function(e) {
-        done++;
-        errors.push(id + ': ' + ((e && e.message) || 'unknown'));
-        if (done === pending) finishPayments(errors);
+        errors.push((e && e.message) || 'Failure on txn ' + id);
+        processNext();
       })
       .submitPayment({ transactionID: id, paymentDate: payDate, amount: t.amountOwed, isRefund: false });
-  });
+  }
+
+  processNext();
 }
 
 function finishPayments(errors) {
@@ -1855,68 +2182,109 @@ function snapCard(label, value, valueClass, wide, sub) {
 }
 
 // ── REPORTS ────────────────────────────────────────────────────
+// ── REPORTS ────────────────────────────────────────────────────
+var REPORT_PANELS = ['bva','cards','cashflow','trend'];
+
 function showReportTab(tab) {
-  // On desktop, all panels are forced visible via CSS !important — tab switching
-  // still works on mobile where only .active panels display.
-  ['bva','chart','trend'].forEach(function(t) {
+  REPORT_PANELS.forEach(function(t) {
     document.getElementById('rtab-' + t).classList.toggle('active', t === tab);
     document.getElementById('report-' + t + '-panel').classList.toggle('active', t === tab);
   });
 }
 
+function getReportDates() {
+  var preset = (document.getElementById('report-preset') || {}).value || 'this-period';
+  var now    = new Date();
+  var start, end;
+
+  function ymd(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+
+  if (preset === 'this-period' || preset === 'last-period') {
+    var payDays = (appData && appData.payDays) || [];
+    var today   = ymd(now);
+    var idx     = -1;
+    for (var i = payDays.length - 1; i >= 0; i--) {
+      if (payDays[i] <= today) { idx = i; break; }
+    }
+    if (idx < 0) idx = 0;
+    if (preset === 'last-period') idx = Math.max(0, idx - 1);
+    start = payDays[idx] || today;
+    var nextPay = payDays[idx + 1];
+    if (nextPay) {
+      var e = new Date(nextPay + 'T00:00:00'); e.setDate(e.getDate() - 1); end = ymd(e);
+    } else {
+      var e2 = new Date(start + 'T00:00:00'); e2.setDate(e2.getDate() + 13); end = ymd(e2);
+    }
+  } else if (preset === 'this-month') {
+    var y = now.getFullYear(), m = now.getMonth();
+    start = ymd(new Date(y, m, 1));
+    end   = ymd(new Date(y, m + 1, 0));
+  } else if (preset === 'last-month') {
+    var y2 = now.getFullYear(), m2 = now.getMonth() - 1;
+    if (m2 < 0) { m2 = 11; y2--; }
+    start = ymd(new Date(y2, m2, 1));
+    end   = ymd(new Date(y2, m2 + 1, 0));
+  } else if (preset === 'last-30') {
+    var e3 = new Date(now); e3.setDate(e3.getDate() - 30);
+    start = ymd(e3); end = ymd(now);
+  } else {
+    start = (document.getElementById('report-start-date') || {}).value || ymd(now);
+    end   = (document.getElementById('report-end-date')   || {}).value || ymd(now);
+  }
+  return { start: start, end: end };
+}
+
+function onReportPresetChange() {
+  var preset  = (document.getElementById('report-preset') || {}).value;
+  var custom  = document.getElementById('report-custom-dates');
+  if (custom) custom.style.display = preset === 'custom' ? 'flex' : 'none';
+  if (preset !== 'custom') loadReports();
+}
+
+function updateReportDateDisplay(start, end) {
+  var el = document.getElementById('report-date-display');
+  if (!el) return;
+  el.textContent = fmtDateLabel(start) + ' \u2013 ' + fmtDateLabel(end);
+}
+
 function loadReports() {
   if (appData && !appData.isConfigured) {
     var msg = '<div class="empty"><div class="empty-icon">📊</div><p>Complete setup to view reports.</p></div>';
-    ['bva','chart','trend'].forEach(function(t) {
-      document.getElementById('report-' + t + '-panel').innerHTML = msg;
-    });
+    REPORT_PANELS.forEach(function(t) { document.getElementById('report-' + t + '-panel').innerHTML = msg; });
     return;
   }
-  var picker = document.getElementById('report-month-picker');
-  var ym     = picker.value || '';
-  var year   = ym ? parseInt(ym.split('-')[0]) : null;
-  var month  = ym ? parseInt(ym.split('-')[1]) : null;
-
-  ['bva','chart','trend'].forEach(function(t) {
-    document.getElementById('report-' + t + '-panel').innerHTML = '<div class="spinner"></div>';
-  });
+  var dates = getReportDates();
+  updateReportDateDisplay(dates.start, dates.end);
+  REPORT_PANELS.forEach(function(t) { document.getElementById('report-' + t + '-panel').innerHTML = '<div class="spinner"></div>'; });
 
   google.script.run
     .withSuccessHandler(function(res) {
       reportsData = res;
       if (!res || !res.success) {
         var err = '<div style="color:var(--red);padding:1rem">' + esc((res && res.error) || 'Error') + '</div>';
-        ['bva','chart','trend'].forEach(function(t) { document.getElementById('report-' + t + '-panel').innerHTML = err; });
+        REPORT_PANELS.forEach(function(t) { document.getElementById('report-' + t + '-panel').innerHTML = err; });
         return;
       }
-      if (picker.options.length <= 1 || picker.options[0].text === 'Loading...') {
-        picker.innerHTML = '';
-        res.availableMonths.forEach(function(ym) {
-          var o = document.createElement('option');
-          o.value = ym; o.textContent = fmtMonthLabel(ym);
-          o.selected = (ym === res.selectedMonth);
-          picker.appendChild(o);
-        });
-      }
       renderBVA(res);
-      renderStackedBar(res);
+      renderCardSpending(res);
+      renderCashFlow(res);
       renderTrend(res);
     })
     .withFailureHandler(function(e) {
       var err = '<div style="color:var(--red);padding:1rem">' + esc((e && e.message) || 'Error') + '</div>';
-      ['bva','chart','trend'].forEach(function(t) { document.getElementById('report-' + t + '-panel').innerHTML = err; });
+      REPORT_PANELS.forEach(function(t) { document.getElementById('report-' + t + '-panel').innerHTML = err; });
     })
-    .getReportsData(year, month);
+    .getReportsData(dates.start, dates.end);
 }
 
 function renderBVA(res) {
   var rows = res.budgetVsActual;
   if (!rows || !rows.length) {
-    document.getElementById('report-bva-panel').innerHTML = '<div class="empty"><div class="empty-icon">\uD83D\uDCCA</div><p>No data for this month.</p></div>';
+    document.getElementById('report-bva-panel').innerHTML = '<div class="empty"><div class="empty-icon">\uD83D\uDCCA</div><p>No data for this period.</p></div>';
     return;
   }
   var totalBudget = 0, totalActual = 0;
-  var html = '<div style="overflow-x:auto"><table class="bva-table"><thead><tr><th>Type</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Var</th><th class="num">%</th></tr></thead><tbody>';
+  var html = '<div class="chart-wrap"><div class="chart-title">Budget vs Actual</div><div style="overflow-x:auto"><table class="bva-table"><thead><tr><th>Type</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Var</th><th class="num">%</th></tr></thead><tbody>';
   rows.forEach(function(r) {
     totalBudget += r.budget; totalActual += r.actual;
     var vc = r.variance >= 0 ? 'pos' : 'neg';
@@ -1930,27 +2298,90 @@ function renderBVA(res) {
   html += '<td class="num">$' + fmt(totalBudget) + '</td><td class="num">$' + fmt(totalActual) + '</td>';
   html += '<td class="num ' + (tv >= 0 ? 'pos' : 'neg') + '">' + (tv >= 0 ? '+' : '') + '$' + fmt(Math.abs(tv)) + '</td>';
   html += '<td class="num">' + (totalBudget > 0 ? (totalActual/totalBudget*100).toFixed(1) + '%' : '\u2014') + '</td></tr>';
-  html += '</tbody></table></div>';
+  html += '</tbody></table></div></div>';
   document.getElementById('report-bva-panel').innerHTML = html;
 }
 
-function renderStackedBar(res) {
-  var data  = res.stackedBar, types = res.allExpenseTypes;
-  if (!data || !data.length) { document.getElementById('report-chart-panel').innerHTML = '<div class="empty"><div class="empty-icon">\uD83D\uDCCA</div><p>No data yet.</p></div>'; return; }
-  var W=320,H=200,padL=45,padB=36,padT=12,padR=8,padInner=16;
-  var chartW=W-padL-padR, chartH=H-padT-padB;
-  var innerW=chartW-padInner*2;
-  var maxVal=0;
-  data.forEach(function(d){var tot=types.reduce(function(s,t){return s+(d.byType[t]||0);},0);if(tot>maxVal)maxVal=tot;});
-  maxVal=maxVal*1.1||100;
-  var spacing=innerW/Math.max(data.length,1);
-  var barW=Math.max(6,Math.min(32,spacing-4));
-  var svg='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:'+W+'px;display:block">';
-  for(var yi=0;yi<=4;yi++){var yv=maxVal*yi/4,yp=padT+chartH-(chartH*yi/4);svg+='<line x1="'+padL+'" y1="'+yp+'" x2="'+(W-padR)+'" y2="'+yp+'" stroke="var(--border)" stroke-width="1"/><text x="'+(padL-4)+'" y="'+(yp+4)+'" text-anchor="end" fill="var(--muted)" font-size="9">'+fmtK(yv)+'</text>';}
-  data.forEach(function(d,bi){var x=padL+padInner+bi*spacing+(spacing-barW)/2,stackY=padT+chartH;types.forEach(function(type,ti){var val=d.byType[type]||0;if(!val)return;var bh=chartH*val/maxVal;stackY-=bh;svg+='<rect x="'+x+'" y="'+stackY+'" width="'+barW+'" height="'+bh+'" fill="'+TYPE_COLORS[ti%TYPE_COLORS.length]+'" rx="1"/>';});svg+='<text x="'+(x+barW/2)+'" y="'+(H-padB+14)+'" text-anchor="middle" fill="var(--sub)" font-size="9">'+fmtMonthShort(d.month)+'</text>';if(d.month===res.selectedMonth)svg+='<rect x="'+(x-2)+'" y="'+padT+'" width="'+(barW+4)+'" height="'+chartH+'" fill="none" stroke="var(--accent)" stroke-width="1.5" rx="2" stroke-dasharray="3,2"/>';});
-  svg+='<line x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(padT+chartH)+'" stroke="var(--border2)" stroke-width="1.5"/><line x1="'+padL+'" y1="'+(padT+chartH)+'" x2="'+(W-padR)+'" y2="'+(padT+chartH)+'" stroke="var(--border2)" stroke-width="1.5"/></svg>';
-  var legend='<div class="chart-legend">';types.forEach(function(t,ti){legend+='<div class="legend-item"><div class="legend-dot" style="background:'+TYPE_COLORS[ti%TYPE_COLORS.length]+'"></div>'+esc(t)+'</div>';});legend+='</div>';
-  document.getElementById('report-chart-panel').innerHTML='<div class="chart-wrap"><div class="chart-title">Monthly Spend by Type</div>'+svg+legend+'</div>';
+function renderCardSpending(res) {
+  var cards = res.cardSpending;
+  var panel = document.getElementById('report-cards-panel');
+  if (!cards || !cards.length) {
+    panel.innerHTML = '<div class="empty"><div class="empty-icon">\uD83D\uDCB3</div><p>No card spending in this period.</p></div>';
+    return;
+  }
+
+  // Donut chart via Chart.js
+  var colors = cards.map(function(c) { return (res.cardColors && res.cardColors[c.card]) || '#3b5bdb'; });
+  var total  = cards.reduce(function(s, c) { return s + c.charged; }, 0);
+  var canvasId = 'card-donut-' + Date.now();
+
+  var html = '<div class="chart-wrap"><div class="chart-title">Spending by Card</div>';
+  html += '<div style="max-width:220px;margin:0 auto .75rem"><canvas id="' + canvasId + '" width="220" height="220"></canvas></div>';
+
+  // Legend + table
+  html += '<table class="bva-table"><thead><tr><th>Card</th><th class="num">Charged</th><th class="num">Paid</th><th class="num">Balance</th></tr></thead><tbody>';
+  cards.forEach(function(c, i) {
+    html += '<tr>';
+    html += '<td><span style="display:inline-block;width:.65rem;height:.65rem;border-radius:50%;background:' + colors[i] + ';margin-right:.4rem;vertical-align:middle"></span><span style="font-weight:600">' + esc(c.card) + '</span></td>';
+    html += '<td class="num">$' + fmt(c.charged) + '</td>';
+    html += '<td class="num">$' + fmt(c.paid)    + '</td>';
+    html += '<td class="num ' + (c.balance > 0 ? 'neg' : 'pos') + '">$' + fmt(c.balance) + '</td>';
+    html += '</tr>';
+  });
+  html += '<tr style="font-weight:700;border-top:2px solid var(--border2)"><td>Total</td>';
+  var totalPaid    = cards.reduce(function(s,c){return s+c.paid;},0);
+  var totalBalance = cards.reduce(function(s,c){return s+c.balance;},0);
+  html += '<td class="num">$' + fmt(total) + '</td><td class="num">$' + fmt(totalPaid) + '</td><td class="num">$' + fmt(totalBalance) + '</td></tr>';
+  html += '</tbody></table></div>';
+
+  panel.innerHTML = html;
+
+  // Draw donut with Chart.js
+  setTimeout(function() {
+    var canvas = document.getElementById(canvasId);
+    if (!canvas || typeof Chart === 'undefined') return;
+    new Chart(canvas.getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels:   cards.map(function(c) { return c.card; }),
+        datasets: [{ data: cards.map(function(c) { return c.charged; }), backgroundColor: colors, borderWidth: 2, borderColor: 'var(--surface)' }]
+      },
+      options: {
+        cutout: '65%',
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: function(ctx) { return ' $' + fmt(ctx.raw) + ' (' + (ctx.raw/total*100).toFixed(1) + '%)'; }}}
+        }
+      }
+    });
+  }, 50);
+}
+
+function renderCashFlow(res) {
+  var periods = res.cashFlow;
+  var panel   = document.getElementById('report-cashflow-panel');
+  if (!periods || !periods.length) {
+    panel.innerHTML = '<div class="empty"><div class="empty-icon">\uD83D\uDCC5</div><p>No pay periods found in this date range.</p></div>';
+    return;
+  }
+  var html = '<div class="chart-wrap"><div class="chart-title">Pay Period Cash Flow</div><div style="overflow-x:auto"><table class="bva-table"><thead><tr><th>Pay Period</th><th class="num">Bills</th><th class="num">Spending</th><th class="num">Total Out</th></tr></thead><tbody>';
+  var sumBills = 0, sumTxn = 0, sumTotal = 0;
+  periods.forEach(function(p) {
+    sumBills  += p.bills;
+    sumTxn    += p.transactions;
+    sumTotal  += p.total;
+    var label  = fmtDateShort(p.periodStart) + ' \u2013 ' + fmtDateShort(p.periodEnd);
+    html += '<tr>';
+    html += '<td style="font-weight:600;font-size:.82rem">' + label + '</td>';
+    html += '<td class="num">' + (p.bills > 0 ? '$' + fmt(p.bills) : '<span style="color:var(--border2)">\u2014</span>') + '</td>';
+    html += '<td class="num">' + (p.transactions > 0 ? '$' + fmt(p.transactions) : '<span style="color:var(--border2)">\u2014</span>') + '</td>';
+    html += '<td class="num" style="font-weight:700">' + (p.total > 0 ? '$' + fmt(p.total) : '<span style="color:var(--border2)">\u2014</span>') + '</td>';
+    html += '</tr>';
+  });
+  html += '<tr style="font-weight:700;border-top:2px solid var(--border2)"><td>Total</td>';
+  html += '<td class="num">$' + fmt(sumBills) + '</td><td class="num">$' + fmt(sumTxn) + '</td><td class="num">$' + fmt(sumTotal) + '</td></tr>';
+  html += '</tbody></table></div></div>';
+  panel.innerHTML = html;
 }
 
 function renderTrend(res) {
@@ -1971,7 +2402,14 @@ function renderTrend(res) {
   data.forEach(function(d,i){svg+='<circle cx="'+xPos(i)+'" cy="'+yPos(d.cumulative)+'" r="3" fill="var(--accent)"/>';});
   svg+='<line x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(padT+chartH)+'" stroke="var(--border2)" stroke-width="1.5"/><line x1="'+padL+'" y1="'+(padT+chartH)+'" x2="'+(W-padR)+'" y2="'+(padT+chartH)+'" stroke="var(--border2)" stroke-width="1.5"/></svg>';
   var legend='<div class="chart-legend"><div class="legend-item"><div class="legend-dot" style="background:var(--accent-lt);border:1px solid var(--border)"></div>Monthly</div><div class="legend-item"><div style="width:.6rem;height:.15rem;background:var(--accent);border-radius:1px"></div>Cumulative</div>'+(budget?'<div class="legend-item"><div style="width:.6rem;height:0;border-top:1px dashed var(--muted)"></div>Budget</div>':'')+'</div>';
-  document.getElementById('report-trend-panel').innerHTML='<div class="chart-wrap"><div class="chart-title">Cumulative Spend vs Monthly Budget</div>'+svg+legend+'</div>';
+  document.getElementById('report-trend-panel').innerHTML='<div class="chart-wrap"><div class="chart-title">Cumulative Spend vs Budget</div>'+svg+legend+'</div>';
+}
+
+function fmtDateShort(ymd) {
+  if (!ymd) return '';
+  var p = ymd.split('-');
+  var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[parseInt(p[1])-1] + ' ' + parseInt(p[2]);
 }
 
 // ── FORMAT HELPERS ──────────────────────────────────────────────

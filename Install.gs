@@ -1,9 +1,11 @@
 // ============================================================
 //  cardBalance — Install.gs
 //  Handles installation, updates, and the custom Sheets menu.
+//  Version is intentionally not declared here — it is read
+//  from Code.gs via getAppVersion() so only one file needs
+//  updating on each release.
 // ============================================================
 
-var APP_VERSION  = "1.1.0";
 var GITHUB_RAW   = "https://raw.githubusercontent.com/andrew-delisle/cardBalance/main/";
 var VERSION_URL  = GITHUB_RAW + "version.json";
 var DOCS_URL     = "https://github.com/andrew-delisle/cardBalance#readme";
@@ -27,8 +29,9 @@ function onOpen() {
 //  INSTALL
 // ============================================================
 function installCardBalance() {
-  var ui = SpreadsheetApp.getUi();
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ui         = SpreadsheetApp.getUi();
+  var ss         = SpreadsheetApp.getActiveSpreadsheet();
+  var appVersion = getAppVersion();
 
   var created = [], skipped = [];
 
@@ -57,13 +60,13 @@ function installCardBalance() {
   if (created.length > 0) summary += "✅ Created: " + created.join(", ") + "\n";
   if (skipped.length > 0) summary += "⏭️ Kept existing: " + skipped.join(", ") + "\n";
 
-  Logger.log("installCardBalance | summary: " + summary);
+  Logger.log("installCardBalance | version=" + appVersion + " | summary: " + summary);
 
   try {
     var template = HtmlService.createTemplateFromFile("Install");
     template.mode    = "install";
     template.summary = summary;
-    template.version = APP_VERSION;
+    template.version = appVersion;
     Logger.log("installCardBalance | template created, showing dialog");
     ui.showModalDialog(
       template.evaluate().setWidth(540).setHeight(600),
@@ -80,9 +83,10 @@ function installCardBalance() {
 //  CHECK FOR UPDATES
 // ============================================================
 function checkForUpdates() {
-  var ui = SpreadsheetApp.getUi();
+  var ui         = SpreadsheetApp.getUi();
+  var appVersion = getAppVersion();
   try {
-    Logger.log("checkForUpdates | fetching: " + VERSION_URL);
+    Logger.log("checkForUpdates | localVersion=" + appVersion + " | fetching: " + VERSION_URL);
     var response = UrlFetchApp.fetch(VERSION_URL, { muteHttpExceptions: true });
     var code = response.getResponseCode();
     Logger.log("checkForUpdates | response code: " + code);
@@ -97,29 +101,29 @@ function checkForUpdates() {
     Logger.log("checkForUpdates | raw response: " + raw.substring(0, 300));
     var remote = JSON.parse(raw);
     var remoteVersion = remote.version || "0.0.0";
-    Logger.log("checkForUpdates | local=" + APP_VERSION + " remote=" + remoteVersion);
+    Logger.log("checkForUpdates | local=" + appVersion + " remote=" + remoteVersion);
 
     try {
       var template = HtmlService.createTemplateFromFile("Install");
       template.mode          = "update";
       template.summary       = "";
-      template.version       = APP_VERSION;
+      template.version       = appVersion;
       template.remoteVersion = remoteVersion;
       template.releaseNotes  = remote.notes       || "";
       template.releaseDate   = remote.releaseDate || "";
       template.codeUrl       = remote.codeUrl     || (GITHUB_RAW + "Code.gs");
       template.htmlUrl       = remote.htmlUrl     || (GITHUB_RAW + "Index.html");
-      template.isUpToDate    = (APP_VERSION === remoteVersion);
+      template.isUpToDate    = (appVersion === remoteVersion);
       ui.showModalDialog(
         template.evaluate().setWidth(540).setHeight(600),
         "cardBalance — Updates"
       );
     } catch(dialogErr) {
       Logger.log("checkForUpdates | dialog error: " + dialogErr.message);
-      if (APP_VERSION === remoteVersion) {
-        ui.alert("cardBalance Updates", "You are up to date! Version " + APP_VERSION + " is the latest.", ui.ButtonSet.OK);
+      if (appVersion === remoteVersion) {
+        ui.alert("cardBalance Updates", "You are up to date! Version " + appVersion + " is the latest.", ui.ButtonSet.OK);
       } else {
-        ui.alert("Update Available", "Version " + remoteVersion + " is available (you have " + APP_VERSION + ").\n\nVisit " + GITHUB_RAW + " to update.", ui.ButtonSet.OK);
+        ui.alert("Update Available", "Version " + remoteVersion + " is available (you have " + appVersion + ").\n\nVisit " + GITHUB_RAW + " to update.", ui.ButtonSet.OK);
       }
     }
   } catch(e) {

@@ -4,7 +4,12 @@
 //  No hardcoded Spreadsheet ID needed.
 // ============================================================
 
-var APP_VERSION = "1.1.0";
+var APP_VERSION = "1.2.0";
+
+/** Callable from Install.gs so the version lives in exactly one place. */
+function getAppVersion() {
+  return APP_VERSION;
+}
 
 var SHEET = {
   TRANSACTIONS: "Transactions",
@@ -288,8 +293,11 @@ function getUnpaidTransactionsInternal() {
     var paid     = Math.round((paidMap[id] || 0) * 100) / 100;
     var owed     = Math.round((original - paid) * 100) / 100;
     if (owed > 0) {
+      var rawDate = parseSheetDate(t["TransactionDate"]);
+      var isoDate = rawDate ? toYMD(rawDate) : safeStr(t["TransactionDate"]);
       unpaid.push({
         transactionID:   id,
+        date:            isoDate,
         transactionDate: dateToStr(t["TransactionDate"]),
         card:            safeStr(t["CreditCard"]),
         expenseType:     safeStr(t["ExpenseType"]),
@@ -299,6 +307,11 @@ function getUnpaidTransactionsInternal() {
       });
     }
   });
+  Logger.log("getUnpaidTransactionsInternal | count=%s | sample.date=%s | sample.transactionDate=%s",
+    unpaid.length,
+    unpaid.length ? unpaid[0].date : "n/a",
+    unpaid.length ? unpaid[0].transactionDate : "n/a"
+  );
   return unpaid;
 }
 
@@ -752,34 +765,44 @@ function getDashboardData(mode) {
 // ============================================================
 //  REPORTS
 // ============================================================
-function getReportsData(year, month) {
+function getReportsData(startDate, endDate) {
   try {
     var config = readConfig();
     var txns   = getAllTransactionSummaries();
+    var now    = new Date();
 
+    // Build available months list from all transactions
     var monthSet = {};
     txns.forEach(function(t) { monthSet[t.date.substring(0, 7)] = true; });
     var availableMonths = Object.keys(monthSet).sort();
 
-    if (!year || !month) {
-      var latest = availableMonths[availableMonths.length - 1] || toYMD(new Date()).substring(0, 7);
-      year  = parseInt(latest.substring(0, 4));
-      month = parseInt(latest.substring(5, 7));
+    // Default to current month if no dates provided
+    if (!startDate || !endDate) {
+      var ym = toYMD(now).substring(0, 7);
+      startDate = ym + '-01';
+      var lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      endDate = ym + '-' + String(lastDay).padStart(2, '0');
     }
 
-    var ymTarget = year + "-" + String(month).padStart(2, "0");
-    var actualByType = {}, txnCountByType = {};
-    txns.forEach(function(t) {
-      if (t.date.substring(0, 7) === ymTarget) {
-        actualByType[t.expenseType]   = Math.round(((actualByType[t.expenseType]   || 0) + t.amount) * 100) / 100;
-        txnCountByType[t.expenseType] = (txnCountByType[t.expenseType] || 0) + 1;
-      }
-    });
+    // Filter transactions to date range
+    var filtered = txns.filter(function(t) { return t.date >= startDate && t.date <= endDate; });
 
-    var budgetFrequency = config.budgetFrequency || "monthly";
+    // Months within range (for stacked bar and trend)
+    var startYM = startDate.substring(0, 7);
+    var endYM   = endDate.substring(0, 7);
+    var rangeMonths = availableMonths.filter(function(ym) { return ym >= startYM && ym <= endYM; });
+
+    // ── BVA ──────────────────────────────────────────────────
+    var budgetFrequency  = config.budgetFrequency || 'monthly';
     var normalizedBudgets = {};
     Object.keys(config.budgets).forEach(function(k) {
       normalizedBudgets[k] = Math.round(normalizeBudgetToMonthly(config.budgets[k], budgetFrequency) * 100) / 100;
+    });
+
+    var actualByType = {}, txnCountByType = {};
+    filtered.forEach(function(t) {
+      actualByType[t.expenseType]   = Math.round(((actualByType[t.expenseType]   || 0) + t.amount) * 100) / 100;
+      txnCountByType[t.expenseType] = (txnCountByType[t.expenseType] || 0) + 1;
     });
 
     var allTypes = Object.keys(normalizedBudgets).concat(Object.keys(actualByType))
@@ -790,15 +813,20 @@ function getReportsData(year, month) {
       var actual = actualByType[type]      || 0;
       return {
         expenseType: type,
-        budget:      budget,
-        actual:      actual,
-        variance:    Math.round((budget - actual) * 100) / 100,
-        pctUsed:     budget > 0 ? Math.round((actual / budget) * 1000) / 10 : null,
-        txnCount:    txnCountByType[type] || 0
+        budget:   budget,
+        actual:   actual,
+        variance: Math.round((budget - actual) * 100) / 100,
+        pctUsed:  budget > 0 ? Math.round((actual / budget) * 1000) / 10 : null,
+        txnCount: txnCountByType[type] || 0
       };
     });
 
-    var stackedBar = availableMonths.map(function(ym) {
+    // ── STACKED BAR (months in range) ────────────────────────
+    var allExpenseTypes = [];
+    txns.forEach(function(t) { if (allExpenseTypes.indexOf(t.expenseType) === -1) allExpenseTypes.push(t.expenseType); });
+    allExpenseTypes.sort();
+
+    var stackedBar = rangeMonths.map(function(ym) {
       var byType = {};
       txns.forEach(function(t) {
         if (t.date.substring(0, 7) === ym)
@@ -807,32 +835,109 @@ function getReportsData(year, month) {
       return { month: ym, byType: byType };
     });
 
+    // ── CUMULATIVE TREND (months in range) ───────────────────
     var runningTotal = 0;
-    var cumulative = availableMonths.map(function(ym) {
+    var cumulative = rangeMonths.map(function(ym) {
       var monthTotal = 0;
       txns.forEach(function(t) { if (t.date.substring(0, 7) === ym) monthTotal += t.amount; });
       runningTotal += monthTotal;
       return { month: ym, monthTotal: Math.round(monthTotal * 100) / 100, cumulative: Math.round(runningTotal * 100) / 100 };
     });
 
-    var allExpenseTypes = [];
-    txns.forEach(function(t) { if (allExpenseTypes.indexOf(t.expenseType) === -1) allExpenseTypes.push(t.expenseType); });
-    allExpenseTypes.sort();
+    // ── SPENDING BY CARD ─────────────────────────────────────
+    var spendByCard = {}, paidByCard = {};
+    filtered.forEach(function(t) {
+      spendByCard[t.card] = Math.round(((spendByCard[t.card] || 0) + t.amount)     * 100) / 100;
+      paidByCard[t.card]  = Math.round(((paidByCard[t.card]  || 0) + t.totalPaid)  * 100) / 100;
+    });
+    var cardSpending = (config.cards || []).map(function(card) {
+      var charged  = spendByCard[card] || 0;
+      var paid     = paidByCard[card]  || 0;
+      return { card: card, charged: charged, paid: paid, balance: Math.round((charged - paid) * 100) / 100 };
+    }).filter(function(c) { return c.charged > 0; });
+
+    // ── PAY PERIOD CASH FLOW ─────────────────────────────────
+    var payDays  = config.payDays || [];
+    var billData = [];
+    try {
+      var billSheet = getSheetOrNull(SHEET.BILLS);
+      if (billSheet && billSheet.getLastRow() > 1) {
+        var bRows = billSheet.getRange(2, 1, billSheet.getLastRow() - 1, 3).getValues();
+        bRows.forEach(function(r) {
+          var name   = (r[0] || '').toString().trim();
+          var amount = parseFloat(r[1]) || 0;
+          var dayDue = parseInt(r[2])   || 1;
+          if (name && amount > 0) billData.push({ name: name, amount: amount, dayDue: dayDue });
+        });
+      }
+    } catch(e) {}
+
+    // Find pay periods overlapping the date range
+    var cashFlow = [];
+    for (var pi = 0; pi < payDays.length; pi++) {
+      var periodStart = payDays[pi];
+      var periodEnd   = pi + 1 < payDays.length ? shiftDate(payDays[pi + 1], -1) : shiftDate(payDays[pi], 13);
+      if (periodEnd < startDate || periodStart > endDate) continue;
+
+      // Bills due in this period
+      var billsTotal = 0;
+      var billsDetail = [];
+      billData.forEach(function(b) {
+        // Find the bill's due date within this period's month
+        var pStart  = new Date(periodStart + 'T00:00:00');
+        var pEnd    = new Date(periodEnd   + 'T00:00:00');
+        var dueYear = pStart.getFullYear(), dueMonth = pStart.getMonth() + 1;
+        var maxDay  = new Date(dueYear, dueMonth, 0).getDate();
+        var clampedDay = Math.min(b.dayDue, maxDay);
+        var dueDate = dueYear + '-' + String(dueMonth).padStart(2, '0') + '-' + String(clampedDay).padStart(2, '0');
+        if (dueDate >= periodStart && dueDate <= periodEnd) {
+          billsTotal += b.amount;
+          billsDetail.push({ name: b.name, amount: b.amount });
+        }
+      });
+
+      // Transactions in this period
+      var txnTotal = 0;
+      filtered.forEach(function(t) {
+        if (t.date >= periodStart && t.date <= periodEnd) txnTotal += t.amount;
+      });
+      txnTotal = Math.round(txnTotal * 100) / 100;
+
+      cashFlow.push({
+        periodStart:  periodStart,
+        periodEnd:    periodEnd,
+        bills:        Math.round(billsTotal * 100) / 100,
+        billsDetail:  billsDetail,
+        transactions: txnTotal,
+        total:        Math.round((billsTotal + txnTotal) * 100) / 100
+      });
+    }
 
     return JSON.parse(JSON.stringify({
-      success: true,
-      selectedMonth:   ymTarget,
+      success:         true,
+      startDate:       startDate,
+      endDate:         endDate,
       availableMonths: availableMonths,
       budgetVsActual:  budgetVsActual,
       stackedBar:      stackedBar,
       cumulative:      cumulative,
       allExpenseTypes: allExpenseTypes,
-      totalBudget:     Object.keys(normalizedBudgets).reduce(function(s, k) { return s + normalizedBudgets[k]; }, 0)
+      totalBudget:     Object.keys(normalizedBudgets).reduce(function(s, k) { return s + normalizedBudgets[k]; }, 0),
+      cardSpending:    cardSpending,
+      cardColors:      config.cardColors || {},
+      cashFlow:        cashFlow
     }));
   } catch(err) {
-    return { success: false, error: err.message };
+    return { success: false, error: 'getReportsData: ' + err.message };
   }
 }
+
+function shiftDate(ymd, days) {
+  var d = new Date(ymd + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return toYMD(d);
+}
+
 
 // ============================================================
 //  BILLS

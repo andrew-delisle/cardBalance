@@ -7,6 +7,39 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.2.0] - 2026-03-13
+
+### Added
+- Reports page fully overhauled — replaced month picker with a date range filter bar supporting presets: This Pay Period, Last Pay Period, This Month, Last Month, Last 30 Days, and Custom date range
+- Reports now show four panels: Budget vs Actual, By Card, Cash Flow, and Trend
+- By Card panel — Chart.js donut chart plus a table showing charged, paid, and outstanding balance per card
+- Cash Flow panel — table of pay periods within the selected date range showing bills due, card spending, and total outgoing per period
+- Payables list sort controls — sort by Date ↓↑, Amount ↓↑, Card A–Z, Type A–Z on both mobile and desktop
+- Payables list filter controls — compact single-row bar with expandable filter panel; filter by card, expense type, and date range; Filter button highlights when filters are active
+- Desktop payables rows now show inline Edit and Delete buttons — no swipe required
+- Pull-to-refresh on mobile Payables page — pull down from the top of the list to trigger a full data reload
+- Refresh icon button on desktop Payables control bar — spins while loading
+- Chart.js 4.4.1 loaded from cdnjs for donut chart rendering
+- Logging added to `applyTxnControls` and `renderPayables` for sort/filter state tracing
+- Server-side `Logger.log` added to `getUnpaidTransactionsInternal` confirming ISO date field on every call
+
+### Fixed
+- Bulk pay (mark all selected as paid) was only processing a subset of transactions — parallel `google.script.run` calls hit Apps Script's concurrency limit; replaced with sequential chained processing; button now shows live "Saving X of Y…" progress
+- Sort by date had no effect — transactions in `appData.transactions` were missing the `date` (ISO) field; `getUnpaidTransactionsInternal` only returned `transactionDate` (display string); added `date` field via `parseSheetDate` → `toYMD`
+- Date filter had no effect for the same reason as above
+- Sort controls on desktop silently reset to `date-desc` after every change — both mobile and desktop selects exist in the DOM simultaneously; loop was letting the inactive select overwrite the active one; fixed by passing prefix explicitly from each `onchange` handler
+- By Card report always showed $0.00 paid — `getReportsData` checked `t.paid` (field doesn't exist) and accumulated `t.amount` instead of `t.totalPaid`; fixed to use `t.totalPaid` unconditionally
+- Stray dropdown arrows appearing beside sort/filter selects inside `.txn-controls` — caused by `.select-wrap::after` CSS triangle applying globally; suppressed inside `.txn-controls` and restored native browser appearance on those selects
+- Refresh button was visible on mobile where pull-to-refresh already handles reload; hidden on mobile via body class CSS
+
+### Changed
+- `getReportsData` signature changed from `(year, month)` to `(startDate, endDate)` ISO date strings
+- `getUnpaidTransactionsInternal` now returns a `date` field (ISO `YYYY-MM-DD`) alongside the existing `transactionDate` display string
+- `loadAppData` now accepts an optional callback, used by `triggerRefresh` to stop the spinner on completion
+- Report panels reorganized from 3 (BVA, Allocation, Trend) to 4 (BVA, By Card, Cash Flow, Trend); desktop shows all four in a 2×2 grid
+
+---
+
 ## [1.1.0] - 2026-03-12
 
 ### Added

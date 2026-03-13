@@ -1,7 +1,7 @@
 {
-  "version": "1.1.0",
-  "releaseDate": "2026-03-12",
-  "notes": "Setup wizard with first-run experience, merged Types & Budgets step, bill paid/unpaid tracking with monthly auto-reset, loading screen, installer menu with sheet creation and update checker, and desktop layout improvements.",
+  "version": "1.2.0",
+  "releaseDate": "2026-03-13",
+  "notes": "Reports overhaul with date range filtering and four panels (Budget vs Actual, By Card, Cash Flow, Trend). Payables sort and filter controls. Bug fixes for bulk pay, date sorting, and card spending paid amounts.",
   "codeUrl": "https://raw.githubusercontent.com/andrew-delisle/cardBalance/main/Code.gs",
   "htmlUrl": "https://raw.githubusercontent.com/andrew-delisle/cardBalance/main/Index.html"
 }
