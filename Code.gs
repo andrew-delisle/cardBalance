@@ -4,7 +4,7 @@
 //  No hardcoded Spreadsheet ID needed.
 // ============================================================
 
-var APP_VERSION = "1.2.1";
+var APP_VERSION = "1.2.3";
 
 /** Callable from Install.gs so the version lives in exactly one place. */
 function getAppVersion() {
@@ -96,6 +96,12 @@ function toYMD(d) {
   return d.getFullYear() + "-" +
     String(d.getMonth() + 1).padStart(2, "0") + "-" +
     String(d.getDate()).padStart(2, "0");
+}
+
+function shiftDate(ymd, days) {
+  var d = new Date(ymd + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return toYMD(d);
 }
 
 function dateToStr(val) {
@@ -249,6 +255,7 @@ function getAppData() {
 
     return JSON.parse(JSON.stringify({
       success:         true,
+      scriptVersion:   APP_VERSION,
       isConfigured:    isConfigured,
       setupComplete:   setupComplete,
       cards:           safeCards,
@@ -466,25 +473,26 @@ function generatePayDays(frequency, anchorDate, anchorDate2) {
   var anchor = parseSheetDate(anchorDate);
   if (!anchor) return payDays;
 
+  var d, i;
+
   if (frequency === "weekly") {
-    var d = new Date(anchor);
-    for (var i = 0; i < 1000; i++) {
+    d = new Date(anchor);
+    for (i = 0; i < 1000; i++) {
       payDays.push(toYMD(d));
       d.setDate(d.getDate() + 7);
     }
 
   } else if (frequency === "biweekly" || !frequency) {
-    var d = new Date(anchor);
-    for (var i = 0; i < 1000; i++) {
+    d = new Date(anchor);
+    for (i = 0; i < 1000; i++) {
       payDays.push(toYMD(d));
       d.setDate(d.getDate() + 14);
     }
 
   } else if (frequency === "monthly") {
-    var d = new Date(anchor);
+    d = new Date(anchor);
     var dayOfMonth = d.getDate();
-    for (var i = 0; i < 1000; i++) {
-      // Clamp to last day of month in case dayOfMonth > days in month
+    for (i = 0; i < 1000; i++) {
       var lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
       var effectiveDay = Math.min(dayOfMonth, lastDay);
       payDays.push(toYMD(new Date(d.getFullYear(), d.getMonth(), effectiveDay)));
@@ -494,20 +502,18 @@ function generatePayDays(frequency, anchorDate, anchorDate2) {
   } else if (frequency === "semimonthly") {
     var anchor2 = anchorDate2 ? parseSheetDate(anchorDate2) : null;
     var day1 = anchor.getDate();
-    var day2 = anchor2 ? anchor2.getDate() : day1 + 15; // fallback if no second anchor
+    var day2 = anchor2 ? anchor2.getDate() : day1 + 15;
 
-    // Generate from the anchor's month for 500 months (yields ~1000 dates)
     var startYear  = anchor.getFullYear();
     var startMonth = anchor.getMonth();
     for (var m = 0; m < 500; m++) {
       var year  = startYear + Math.floor((startMonth + m) / 12);
       var month = (startMonth + m) % 12;
-      var lastDay = new Date(year, month + 1, 0).getDate();
-      payDays.push(toYMD(new Date(year, month, Math.min(day1, lastDay))));
-      payDays.push(toYMD(new Date(year, month, Math.min(day2, lastDay))));
+      var mLastDay = new Date(year, month + 1, 0).getDate();
+      payDays.push(toYMD(new Date(year, month, Math.min(day1, mLastDay))));
+      payDays.push(toYMD(new Date(year, month, Math.min(day2, mLastDay))));
     }
     payDays.sort();
-    // Trim to 1000
     payDays = payDays.slice(0, 1000);
   }
 
@@ -599,25 +605,6 @@ function saveSetup(payload) {
   }
 }
 
-function getSetupData() {
-  try {
-    var config = readConfig();
-    // Build cards array with colors
-    var cards = config.cards.map(function(name) {
-      return { name: name, color: config.cardColors[name] || "" };
-    });
-    return JSON.parse(JSON.stringify({
-      success:      true,
-      cards:        cards,
-      expenseTypes: config.expenseTypes,
-      budgets:      config.budgets,  // { expenseType: amount }
-      anchorDate:   config.anchorDate
-    }));
-  } catch(err) {
-    return { success: false, error: err.message };
-  }
-}
-
 // ============================================================
 //  DASHBOARD + REPORTS HELPERS
 // ============================================================
@@ -671,6 +658,14 @@ function getPayPeriod(payDays, targetDate) {
 // ============================================================
 //  BUDGET NORMALIZATION
 // ============================================================
+
+/**
+ * Converts a per-period budget to its monthly equivalent.
+ * Used ONLY by getDashboardData — the dashboard always displays
+ * a monthly or per-period budget regardless of date range.
+ * For the Reports page use normalizeBudgetToRange() instead,
+ * which scales to an arbitrary date range.
+ */
 function normalizeBudgetToMonthly(amount, frequency) {
   var result;
   switch (frequency) {
@@ -894,15 +889,16 @@ function getReportsData(startDate, endDate) {
     try {
       var billSheet = getSheetOrNull(SHEET.BILLS);
       if (billSheet && billSheet.getLastRow() > 1) {
-        var bRows = billSheet.getRange(2, 1, billSheet.getLastRow() - 1, 3).getValues();
-        bRows.forEach(function(r) {
-          var name   = (r[0] || '').toString().trim();
-          var amount = parseFloat(r[1]) || 0;
-          var dayDue = parseInt(r[2])   || 1;
+        sheetToObjects(billSheet).forEach(function(r) {
+          var name   = safeStr(r["BillName"]);
+          var amount = safeFloat(r["Amount"]);
+          var dayDue = parseInt(safeStr(r["DayDue"])) || 1;
           if (name && amount > 0) billData.push({ name: name, amount: amount, dayDue: dayDue });
         });
       }
-    } catch(e) {}
+    } catch(e) {
+      Logger.log("getReportsData | bills load error: " + e.message);
+    }
 
     // Find pay periods overlapping the date range
     var cashFlow = [];
@@ -963,13 +959,6 @@ function getReportsData(startDate, endDate) {
     return { success: false, error: 'getReportsData: ' + err.message };
   }
 }
-
-function shiftDate(ymd, days) {
-  var d = new Date(ymd + 'T00:00:00');
-  d.setDate(d.getDate() + days);
-  return toYMD(d);
-}
-
 
 // ============================================================
 //  BILLS
@@ -1099,9 +1088,6 @@ function saveBills(payload) {
     return { success: false, error: err.message };
   }
 }
-
-// Also include bills in getAppData so Setup can pre-populate
-// (bills array added inline — see getAppData above, updated below)
 
 // ============================================================
 //  BILL PAID STATE

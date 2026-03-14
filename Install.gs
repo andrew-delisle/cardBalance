@@ -12,6 +12,21 @@ var DOCS_URL     = "https://github.com/andrew-delisle/cardBalance#readme";
 
 var REQUIRED_SHEETS = ["Config", "Transactions", "Bills", "Payments"];
 
+/**
+ * Returns true if semantic version string a is greater than b.
+ * Compares major, minor, patch numerically so "1.10.0" > "1.9.0" works correctly.
+ */
+function semverGt(a, b) {
+  var pa = (a || "0.0.0").split(".").map(Number);
+  var pb = (b || "0.0.0").split(".").map(Number);
+  for (var i = 0; i < 3; i++) {
+    var na = pa[i] || 0, nb = pb[i] || 0;
+    if (na > nb) return true;
+    if (na < nb) return false;
+  }
+  return false; // equal
+}
+
 // ============================================================
 //  MENU
 // ============================================================
@@ -101,7 +116,9 @@ function checkForUpdates() {
     Logger.log("checkForUpdates | raw response: " + raw.substring(0, 300));
     var remote = JSON.parse(raw);
     var remoteVersion = remote.version || "0.0.0";
-    Logger.log("checkForUpdates | local=" + appVersion + " remote=" + remoteVersion);
+
+      var updateAvailable = semverGt(remoteVersion, appVersion);
+      Logger.log("checkForUpdates | local=" + appVersion + " remote=" + remoteVersion + " updateAvailable=" + updateAvailable);
 
     try {
       var template = HtmlService.createTemplateFromFile("Install");
@@ -113,14 +130,14 @@ function checkForUpdates() {
       template.releaseDate   = remote.releaseDate || "";
       template.codeUrl       = remote.codeUrl     || (GITHUB_RAW + "Code.gs");
       template.htmlUrl       = remote.htmlUrl     || (GITHUB_RAW + "Index.html");
-      template.isUpToDate    = (appVersion === remoteVersion);
+      template.isUpToDate    = !updateAvailable;
       ui.showModalDialog(
         template.evaluate().setWidth(540).setHeight(600),
         "cardBalance — Updates"
       );
     } catch(dialogErr) {
       Logger.log("checkForUpdates | dialog error: " + dialogErr.message);
-      if (appVersion === remoteVersion) {
+      if (!updateAvailable) {
         ui.alert("cardBalance Updates", "You are up to date! Version " + appVersion + " is the latest.", ui.ButtonSet.OK);
       } else {
         ui.alert("Update Available", "Version " + remoteVersion + " is available (you have " + appVersion + ").\n\nVisit " + GITHUB_RAW + " to update.", ui.ButtonSet.OK);

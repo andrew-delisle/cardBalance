@@ -393,6 +393,11 @@ body.mobile-landscape .snap-value { font-size:1rem; }
   <button onclick="dismissWelcome()" style="background:var(--accent);color:#fff;border:none;border-radius:.75rem;padding:.875rem 2rem;font-family:var(--sans);font-size:1rem;font-weight:700;cursor:pointer;width:100%;max-width:280px">Get Started →</button>
 </div>
 
+<!-- VERSION MISMATCH BANNER -->
+<div id="version-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9998;background:#c92a2a;color:#fff;font-family:var(--sans);font-size:.8rem;font-weight:600;padding:.6rem 1rem;text-align:center;line-height:1.5">
+  ⚠️ Version mismatch — <span id="version-banner-detail"></span>. Please update both files and redeploy.
+</div>
+
 <div class="logo">card<span>Balance</span></div></header>
 <div class="app-body">
 <main>
@@ -448,7 +453,7 @@ body.mobile-landscape .snap-value { font-size:1rem; }
             <input type="date" id="desktop-filter-start" onchange="applyTxnControls('desktop')" style="flex:1;border:1px solid var(--border);border-radius:.5rem;padding:.4rem .5rem;font-family:var(--sans);font-size:.8rem;background:var(--surface);color:var(--text);outline:none"/>
             <input type="date" id="desktop-filter-end"   onchange="applyTxnControls('desktop')" style="flex:1;border:1px solid var(--border);border-radius:.5rem;padding:.4rem .5rem;font-family:var(--sans);font-size:.8rem;background:var(--surface);color:var(--text);outline:none"/>
           </div>
-          <button class="btn btn-ghost" style="width:100%;font-size:.8rem;padding:.4rem" onclick="clearTxnFilters('desktop')">Clear Filters</button>
+          <button class="btn btn-ghost" style="width:100%;font-size:.8rem;padding:.4rem" onclick="clearTxnFilters()">Clear Filters</button>
         </div>
       </div>
       <div id="desktop-payables-panel">
@@ -506,7 +511,7 @@ body.mobile-landscape .snap-value { font-size:1rem; }
           <input type="date" id="mobile-filter-start" onchange="applyTxnControls('mobile')" placeholder="Start" style="flex:1;border:1px solid var(--border);border-radius:.5rem;padding:.4rem .5rem;font-family:var(--sans);font-size:.8rem;background:var(--surface);color:var(--text);outline:none"/>
           <input type="date" id="mobile-filter-end"   onchange="applyTxnControls('mobile')" placeholder="End"   style="flex:1;border:1px solid var(--border);border-radius:.5rem;padding:.4rem .5rem;font-family:var(--sans);font-size:.8rem;background:var(--surface);color:var(--text);outline:none"/>
         </div>
-        <button class="btn btn-ghost" style="width:100%;font-size:.8rem;padding:.4rem" onclick="clearTxnFilters('mobile')">Clear Filters</button>
+        <button class="btn btn-ghost" style="width:100%;font-size:.8rem;padding:.4rem" onclick="clearTxnFilters()">Clear Filters</button>
       </div>
     </div>
     <div id="pull-indicator" class="pull-indicator">
@@ -843,6 +848,9 @@ body.mobile-landscape .snap-value { font-size:1rem; }
 </div>
 
 <script>
+// ── VERSION ─────────────────────────────────────────────────────
+var HTML_VERSION = "1.2.3";
+
 // ── DEBUG LOGGING ───────────────────────────────────────────────
 var DEBUG      = false;
 var LOG_MAX    = 200;
@@ -1024,7 +1032,7 @@ window.addEventListener('load', function() {
     var _lastScrollTop = -1;
     mainEl.addEventListener('scroll', function() {
       var st = mainEl.scrollTop;
-      if (st > 0) _savedScrollTop = st;
+      _savedScrollTop = st;
       if (!DEBUG) { _lastScrollTop = st; return; }
       var now = Date.now();
       if (st === 0 && _lastScrollTop !== 0) {
@@ -1058,6 +1066,20 @@ function loadAppData(onComplete) {
       }
       appData    = res;
       cardColors = res.cardColors || {};
+
+      // Version mismatch check
+      var banner = document.getElementById('version-banner');
+      if (banner) {
+        if (res.scriptVersion && res.scriptVersion !== HTML_VERSION) {
+          document.getElementById('version-banner-detail').textContent =
+            'script v' + res.scriptVersion + ' / html v' + HTML_VERSION;
+          banner.style.display = 'block';
+          log('version:mismatch', 'script=' + res.scriptVersion + ' html=' + HTML_VERSION);
+        } else {
+          banner.style.display = 'none';
+          log('version:ok', 'script=' + res.scriptVersion + ' html=' + HTML_VERSION);
+        }
+      }
 
       // Setup flow diagnostics
       log('loadAppData', 'isConfigured=' + res.isConfigured + ' setupComplete=' + res.setupComplete +
@@ -1260,8 +1282,9 @@ function toggleFilterPanel(pfx) {
   if (otherBtn) otherBtn.classList.toggle('active', !open);
 }
 
-function clearTxnFilters(pfx) {
+function clearTxnFilters() {
   txnFilterCard = ''; txnFilterType = ''; txnFilterStart = ''; txnFilterEnd = '';
+  log('clearTxnFilters', 'all filters cleared');
   syncTxnControls();
   if (appData) renderPayables(appData.transactions || []);
 }
@@ -1580,14 +1603,8 @@ function openEditSheet(id) {
   fillSelect('edit-card', cards, '');
   fillSelect('edit-type', types, '');
 
-  var rawDate = t.transactionDate;
   var editDateEl = document.getElementById('edit-date');
-  if (editDateEl && rawDate) {
-    var parts = rawDate.split('/');
-    if (parts.length === 3) {
-      editDateEl.value = parts[2] + '-' + parts[0].padStart(2,'0') + '-' + parts[1].padStart(2,'0');
-    }
-  }
+  if (editDateEl && t.date) editDateEl.value = t.date;
   var cardSel = document.getElementById('edit-card');
   if (cardSel) cardSel.value = t.card;
   var typeSel = document.getElementById('edit-type');
@@ -1887,17 +1904,6 @@ function populateSetup(data) {
   initBillBalancePicker();
 }
 
-function makeBudgetRow(expType, amount) {
-  var div = document.createElement('div');
-  div.className = 'setup-row';
-  div.setAttribute('data-type', expType || '');
-  div.innerHTML =
-    '<span style="flex:1.5;font-size:.9rem;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(expType || '') + '</span>' +
-    '<span class="prefix">$</span>' +
-    '<input type="number" placeholder="0.00" value="' + (amount || '') + '" step="0.01" min="0" style="flex:1;text-align:right;border:none;background:none;font-family:var(--sans);font-size:.9rem;color:var(--text);outline:none"/>';
-  return div;
-}
-
 function makeCardRow(name, color) {
   var div = document.createElement('div');
   div.className = 'setup-row';
@@ -2182,7 +2188,6 @@ function snapCard(label, value, valueClass, wide, sub) {
 }
 
 // ── REPORTS ────────────────────────────────────────────────────
-// ── REPORTS ────────────────────────────────────────────────────
 var REPORT_PANELS = ['bva','cards','cashflow','trend'];
 
 function showReportTab(tab) {
@@ -2385,24 +2390,70 @@ function renderCashFlow(res) {
 }
 
 function renderTrend(res) {
-  var data=res.cumulative;
-  if(!data||!data.length){document.getElementById('report-trend-panel').innerHTML='<div class="empty"><div class="empty-icon">\uD83D\uDCC8</div><p>No data yet.</p></div>';return;}
-  var W=320,H=180,padL=48,padB=36,padT=12,padR=8,padInner=16,chartW=W-padL-padR,chartH=H-padT-padB,budget=res.totalBudget;
-  var innerW=chartW-padInner*2;
-  var maxVal=Math.max(data.reduce(function(m,d){return Math.max(m,d.cumulative,d.monthTotal);},0),budget)*1.1||100;
-  var svg='<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;max-width:'+W+'px;display:block">';
-  for(var yi=0;yi<=4;yi++){var yp=padT+chartH-chartH*yi/4;svg+='<line x1="'+padL+'" y1="'+yp+'" x2="'+(W-padR)+'" y2="'+yp+'" stroke="var(--border)" stroke-width="1"/><text x="'+(padL-4)+'" y="'+(yp+4)+'" text-anchor="end" fill="var(--muted)" font-size="9">'+fmtK(maxVal*yi/4)+'</text>';}
-  if(budget>0){var by=padT+chartH-chartH*budget/maxVal;svg+='<line x1="'+padL+'" y1="'+by+'" x2="'+(W-padR)+'" y2="'+by+'" stroke="var(--muted)" stroke-width="1" stroke-dasharray="4,3"/><text x="'+(W-padR-2)+'" y="'+(by-3)+'" text-anchor="end" fill="var(--muted)" font-size="8">budget</text>';}
-  function xPos(i){return padL+padInner+(i/Math.max(data.length-1,1))*innerW;}
-  function yPos(v){return padT+chartH-chartH*v/maxVal;}
-  var barW2=Math.max(4,Math.min(20,innerW/Math.max(data.length,1)-4));
-  data.forEach(function(d,i){var bh=chartH*d.monthTotal/maxVal;svg+='<rect x="'+(xPos(i)-barW2/2)+'" y="'+(padT+chartH-bh)+'" width="'+barW2+'" height="'+bh+'" fill="var(--accent-lt)" rx="1"/><text x="'+xPos(i)+'" y="'+(H-padB+14)+'" text-anchor="middle" fill="var(--sub)" font-size="9">'+fmtMonthShort(d.month)+'</text>';});
-  var pts=data.map(function(d,i){return xPos(i)+','+yPos(d.cumulative);}).join(' ');
-  svg+='<polyline points="'+pts+'" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>';
-  data.forEach(function(d,i){svg+='<circle cx="'+xPos(i)+'" cy="'+yPos(d.cumulative)+'" r="3" fill="var(--accent)"/>';});
-  svg+='<line x1="'+padL+'" y1="'+padT+'" x2="'+padL+'" y2="'+(padT+chartH)+'" stroke="var(--border2)" stroke-width="1.5"/><line x1="'+padL+'" y1="'+(padT+chartH)+'" x2="'+(W-padR)+'" y2="'+(padT+chartH)+'" stroke="var(--border2)" stroke-width="1.5"/></svg>';
-  var legend='<div class="chart-legend"><div class="legend-item"><div class="legend-dot" style="background:var(--accent-lt);border:1px solid var(--border)"></div>Monthly</div><div class="legend-item"><div style="width:.6rem;height:.15rem;background:var(--accent);border-radius:1px"></div>Cumulative</div>'+(budget?'<div class="legend-item"><div style="width:.6rem;height:0;border-top:1px dashed var(--muted)"></div>Budget</div>':'')+'</div>';
-  document.getElementById('report-trend-panel').innerHTML='<div class="chart-wrap"><div class="chart-title">Cumulative Spend vs Budget</div>'+svg+legend+'</div>';
+  var data   = res.cumulative;
+  var panel  = document.getElementById('report-trend-panel');
+  if (!data || !data.length) {
+    panel.innerHTML = '<div class="empty"><div class="empty-icon">\uD83D\uDCC8</div><p>No data yet.</p></div>';
+    return;
+  }
+
+  var W = 320, H = 180, padL = 48, padB = 36, padT = 12, padR = 8, padInner = 16;
+  var chartW = W - padL - padR;
+  var chartH = H - padT - padB;
+  var innerW = chartW - padInner * 2;
+  var budget = res.totalBudget;
+
+  var maxVal = Math.max(
+    data.reduce(function(m, d) { return Math.max(m, d.cumulative, d.monthTotal); }, 0),
+    budget
+  ) * 1.1 || 100;
+
+  function xPos(i) { return padL + padInner + (i / Math.max(data.length - 1, 1)) * innerW; }
+  function yPos(v) { return padT + chartH - chartH * v / maxVal; }
+
+  var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;max-width:' + W + 'px;display:block">';
+
+  // Grid lines
+  for (var yi = 0; yi <= 4; yi++) {
+    var yp = padT + chartH - chartH * yi / 4;
+    svg += '<line x1="' + padL + '" y1="' + yp + '" x2="' + (W - padR) + '" y2="' + yp + '" stroke="var(--border)" stroke-width="1"/>';
+    svg += '<text x="' + (padL - 4) + '" y="' + (yp + 4) + '" text-anchor="end" fill="var(--muted)" font-size="9">' + fmtK(maxVal * yi / 4) + '</text>';
+  }
+
+  // Budget line
+  if (budget > 0) {
+    var by = padT + chartH - chartH * budget / maxVal;
+    svg += '<line x1="' + padL + '" y1="' + by + '" x2="' + (W - padR) + '" y2="' + by + '" stroke="var(--muted)" stroke-width="1" stroke-dasharray="4,3"/>';
+    svg += '<text x="' + (W - padR - 2) + '" y="' + (by - 3) + '" text-anchor="end" fill="var(--muted)" font-size="8">budget</text>';
+  }
+
+  // Monthly bars and labels
+  var barW = Math.max(4, Math.min(20, innerW / Math.max(data.length, 1) - 4));
+  data.forEach(function(d, i) {
+    var bh = chartH * d.monthTotal / maxVal;
+    svg += '<rect x="' + (xPos(i) - barW / 2) + '" y="' + (padT + chartH - bh) + '" width="' + barW + '" height="' + bh + '" fill="var(--accent-lt)" rx="1"/>';
+    svg += '<text x="' + xPos(i) + '" y="' + (H - padB + 14) + '" text-anchor="middle" fill="var(--sub)" font-size="9">' + fmtMonthShort(d.month) + '</text>';
+  });
+
+  // Cumulative line
+  var pts = data.map(function(d, i) { return xPos(i) + ',' + yPos(d.cumulative); }).join(' ');
+  svg += '<polyline points="' + pts + '" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>';
+  data.forEach(function(d, i) {
+    svg += '<circle cx="' + xPos(i) + '" cy="' + yPos(d.cumulative) + '" r="3" fill="var(--accent)"/>';
+  });
+
+  // Axes
+  svg += '<line x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (padT + chartH) + '" stroke="var(--border2)" stroke-width="1.5"/>';
+  svg += '<line x1="' + padL + '" y1="' + (padT + chartH) + '" x2="' + (W - padR) + '" y2="' + (padT + chartH) + '" stroke="var(--border2)" stroke-width="1.5"/>';
+  svg += '</svg>';
+
+  var legend = '<div class="chart-legend">' +
+    '<div class="legend-item"><div class="legend-dot" style="background:var(--accent-lt);border:1px solid var(--border)"></div>Monthly</div>' +
+    '<div class="legend-item"><div style="width:.6rem;height:.15rem;background:var(--accent);border-radius:1px"></div>Cumulative</div>' +
+    (budget ? '<div class="legend-item"><div style="width:.6rem;height:0;border-top:1px dashed var(--muted)"></div>Budget</div>' : '') +
+    '</div>';
+
+  panel.innerHTML = '<div class="chart-wrap"><div class="chart-title">Cumulative Spend vs Budget</div>' + svg + legend + '</div>';
 }
 
 function fmtDateShort(ymd) {

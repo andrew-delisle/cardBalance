@@ -1,7 +1,7 @@
 {
-  "version": "1.2.1",
-  "releaseDate": "2026-03-13",
-  "notes": "Bug fix: BVA budget now scales to the selected date range instead of always showing a monthly figure. Installer no longer needs updating on each release — version is read from Code.gs.",
+  "version": "1.2.3",
+  "releaseDate": "2026-03-14",
+  "notes": "Internal code cleanup — no behavior changes. Dead code removed, fragile patterns fixed, and renderTrend reformatted for readability.",
   "codeUrl": "https://raw.githubusercontent.com/andrew-delisle/cardBalance/main/Code.gs",
   "htmlUrl": "https://raw.githubusercontent.com/andrew-delisle/cardBalance/main/Index.html"
 }

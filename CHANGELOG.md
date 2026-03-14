@@ -7,6 +7,40 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.2.3] - 2026-03-14
+
+### Fixed
+- Update checker incorrectly showed "update available" when local version was ahead of GitHub (e.g. running 1.2.2 against a repo still on 1.2.1). Version comparison now uses proper semantic version logic — update is only prompted when remote is strictly greater than local. Handles double-digit version components correctly (e.g. 1.10.0 > 1.9.0)
+
+### Changed
+- `generatePayDays` — fixed duplicate `var d` and `var i` declarations across `if` branches; variables now declared once before the switch, which is correct under strict mode
+- `getReportsData` — bills loading now uses `sheetToObjects` and named column access (`BillName`, `Amount`, `DayDue`) instead of raw range index access; makes the function resilient to column reordering
+- `getReportsData` — bills load error is now logged via `Logger.log` instead of being silently swallowed
+- `normalizeBudgetToMonthly` — added clarifying comment that this function is Dashboard-only; Reports uses `normalizeBudgetToRange` instead
+- `shiftDate` — moved next to `toYMD` with the other date helpers rather than sitting after `getReportsData`
+- `openEditSheet` — date field now populated from `t.date` (ISO `YYYY-MM-DD`) directly instead of parsing the display string `transactionDate`; eliminates a fragile manual split
+- `clearTxnFilters` — removed unused `pfx` parameter and updated both call sites
+- `renderTrend` — reformatted from dense minified one-liners to normal readable code
+- `_savedScrollTop` — now saves `0` explicitly so navigating back to the top of a page correctly clears the saved position
+
+### Removed
+- `getSetupData` (Code.gs) — dead code; `getAppData` returns the same information and is what the frontend calls
+- `makeBudgetRow` (Index.html) — dead code; superseded by `makeTypeRow` which has an editable name field
+- Duplicate `// ── REPORTS` section comment in Index.html
+- Stale development comment referencing bills array integration that was completed in an earlier session
+
+---
+
+## [1.2.2] - 2026-03-13
+
+### Added
+- Version mismatch detection — on load, `Index.html` compares its own `HTML_VERSION` against `scriptVersion` returned by `getAppData`. If they differ, a persistent red banner appears: "⚠️ Version mismatch — script vX.X.X / html vX.X.X. Please update both files and redeploy." Banner is hidden when versions match
+- `HTML_VERSION` constant added to top of script block in `Index.html` — bumped alongside `APP_VERSION` in `Code.gs` on every release
+- `scriptVersion` field added to `getAppData` response so the frontend can read the server-side version
+- Version check result logged via the diagnostic log (`version:ok` or `version:mismatch`)
+
+---
+
 ## [1.2.1] - 2026-03-13
 
 ### Fixed
