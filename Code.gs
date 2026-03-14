@@ -660,30 +660,10 @@ function getPayPeriod(payDays, targetDate) {
 // ============================================================
 
 /**
- * Converts a per-period budget to its monthly equivalent.
- * Used ONLY by getDashboardData — the dashboard always displays
- * a monthly or per-period budget regardless of date range.
- * For the Reports page use normalizeBudgetToRange() instead,
- * which scales to an arbitrary date range.
- */
-function normalizeBudgetToMonthly(amount, frequency) {
-  var result;
-  switch (frequency) {
-    case "weekly":      result = amount * 52 / 12; break;
-    case "biweekly":    result = amount * 26 / 12; break;
-    case "semimonthly": result = amount * 2;        break;
-    case "monthly":
-    default:            result = amount;            break;
-  }
-  Logger.log("normalizeBudgetToMonthly | frequency: %s | input: %s | output: %s", frequency, amount, result.toFixed(2));
-  return result;
-}
-
-/**
  * Scales a per-period budget amount to match an arbitrary date range.
  * Converts to a daily rate first, then multiplies by the number of days
- * in the range. This means any date range — pay period, month, 30 days,
- * custom — gets a proportionally correct budget figure.
+ * in the range. Used by both getDashboardData and getReportsData so that
+ * budget figures are always accurate to the exact window being viewed.
  *
  * @param {number} amount        - Raw budget amount per budgetFrequency period
  * @param {string} frequency     - budgetFrequency: weekly/biweekly/semimonthly/monthly
@@ -754,12 +734,7 @@ function getDashboardData(mode) {
     var budgetFrequency = config.budgetFrequency || "monthly";
     var normalizedBudgets = {};
     Object.keys(config.budgets).forEach(function(k) {
-      // In period mode, budget is already per-period — no normalization needed
-      // In month mode, normalize from per-period to monthly equivalent
-      var normalized = mode === "month"
-        ? normalizeBudgetToMonthly(config.budgets[k], budgetFrequency)
-        : config.budgets[k];
-      normalizedBudgets[k] = Math.round(normalized * 100) / 100;
+      normalizedBudgets[k] = Math.round(normalizeBudgetToRange(config.budgets[k], budgetFrequency, windowStart, windowEnd) * 100) / 100;
     });
 
     var totalBudget = Object.keys(normalizedBudgets).reduce(function(s, k) { return s + normalizedBudgets[k]; }, 0);

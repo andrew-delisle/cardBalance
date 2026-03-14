@@ -1,7 +1,7 @@
 {
   "version": "1.2.3",
   "releaseDate": "2026-03-14",
-  "notes": "Internal code cleanup — no behavior changes. Dead code removed, fragile patterns fixed, and renderTrend reformatted for readability.",
+  "notes": "Dashboard budget now scales to actual days in the viewed window — consistent with Reports. Update checker fixed to only prompt when a newer version is available. Internal code cleanup with no behavior changes.",
   "codeUrl": "https://raw.githubusercontent.com/andrew-delisle/cardBalance/main/Code.gs",
   "htmlUrl": "https://raw.githubusercontent.com/andrew-delisle/cardBalance/main/Index.html"
 }

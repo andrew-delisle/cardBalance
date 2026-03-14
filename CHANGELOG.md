@@ -11,6 +11,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 - Update checker incorrectly showed "update available" when local version was ahead of GitHub (e.g. running 1.2.2 against a repo still on 1.2.1). Version comparison now uses proper semantic version logic — update is only prompted when remote is strictly greater than local. Handles double-digit version components correctly (e.g. 1.10.0 > 1.9.0)
+- Dashboard budget figures now scale to the exact days in the viewed window using `normalizeBudgetToRange`, consistent with the Reports page. Previously the dashboard used an annual average (e.g. bi-weekly × 26/12) which was always slightly off — March would show $1,300 instead of the correct $1,328.57. Pay Period mode now shows exactly the entered per-period amount, and Calendar Month shows the budget proportional to that month's actual day count
+
+### Removed
+- `normalizeBudgetToMonthly` — fully replaced by `normalizeBudgetToRange` which is now used by both the dashboard and reports. The old function produced averaged monthly figures that diverged from reality the more days a month had
 
 ### Changed
 - `generatePayDays` — fixed duplicate `var d` and `var i` declarations across `if` branches; variables now declared once before the switch, which is correct under strict mode
