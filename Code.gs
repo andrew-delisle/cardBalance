@@ -4,7 +4,7 @@
 //  No hardcoded Spreadsheet ID needed.
 // ============================================================
 
-var APP_VERSION = "1.2.0";
+var APP_VERSION = "1.2.1";
 
 /** Callable from Install.gs so the version lives in exactly one place. */
 function getAppVersion() {
@@ -684,6 +684,38 @@ function normalizeBudgetToMonthly(amount, frequency) {
   return result;
 }
 
+/**
+ * Scales a per-period budget amount to match an arbitrary date range.
+ * Converts to a daily rate first, then multiplies by the number of days
+ * in the range. This means any date range — pay period, month, 30 days,
+ * custom — gets a proportionally correct budget figure.
+ *
+ * @param {number} amount        - Raw budget amount per budgetFrequency period
+ * @param {string} frequency     - budgetFrequency: weekly/biweekly/semimonthly/monthly
+ * @param {string} startDate     - ISO date "YYYY-MM-DD"
+ * @param {string} endDate       - ISO date "YYYY-MM-DD"
+ * @returns {number}
+ */
+function normalizeBudgetToRange(amount, frequency, startDate, endDate) {
+  var daysInRange = Math.round(
+    (new Date(endDate + 'T00:00:00') - new Date(startDate + 'T00:00:00')) / 86400000
+  ) + 1;
+
+  var daysPerPeriod;
+  switch (frequency) {
+    case "weekly":      daysPerPeriod = 7;          break;
+    case "biweekly":    daysPerPeriod = 14;         break;
+    case "semimonthly": daysPerPeriod = 365.25 / 24; break;
+    case "monthly":
+    default:            daysPerPeriod = 365.25 / 12; break;
+  }
+
+  var result = amount * (daysInRange / daysPerPeriod);
+  Logger.log("normalizeBudgetToRange | frequency=%s | amount=%s | daysInRange=%s | daysPerPeriod=%s | result=%s",
+    frequency, amount, daysInRange, daysPerPeriod.toFixed(2), result.toFixed(2));
+  return result;
+}
+
 // ============================================================
 //  DASHBOARD
 // ============================================================
@@ -796,7 +828,7 @@ function getReportsData(startDate, endDate) {
     var budgetFrequency  = config.budgetFrequency || 'monthly';
     var normalizedBudgets = {};
     Object.keys(config.budgets).forEach(function(k) {
-      normalizedBudgets[k] = Math.round(normalizeBudgetToMonthly(config.budgets[k], budgetFrequency) * 100) / 100;
+      normalizedBudgets[k] = Math.round(normalizeBudgetToRange(config.budgets[k], budgetFrequency, startDate, endDate) * 100) / 100;
     });
 
     var actualByType = {}, txnCountByType = {};

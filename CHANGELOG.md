@@ -7,6 +7,18 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.2.1] - 2026-03-13
+
+### Fixed
+- Budget vs Actual report always showed a monthly budget figure regardless of the selected date range — a bi-weekly $600 budget would show as $1,300 even when viewing a single pay period. Replaced `normalizeBudgetToMonthly` with `normalizeBudgetToRange` which converts to a daily rate and scales by the exact number of days in the selected range, so any preset (pay period, last month, last 30 days, custom) shows the correct proportional budget
+
+### Changed
+- `Install.gs` no longer declares `APP_VERSION` — version is now read from `Code.gs` via `getAppVersion()`. `Install.gs` does not need to be updated on future releases unless the installer itself changes
+- Added `getAppVersion()` to `Code.gs` as the single source of truth for the app version
+- Added `normalizeBudgetToRange(amount, frequency, startDate, endDate)` to `Code.gs` for proportional budget scaling across arbitrary date ranges
+
+---
+
 ## [1.2.0] - 2026-03-13
 
 ### Added
