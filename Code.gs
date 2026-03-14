@@ -4,7 +4,7 @@
 //  No hardcoded Spreadsheet ID needed.
 // ============================================================
 
-var APP_VERSION = "1.2.3";
+var APP_VERSION = "1.3.0";
 
 /** Callable from Install.gs so the version lives in exactly one place. */
 function getAppVersion() {
@@ -373,7 +373,11 @@ function updateTransaction(payload) {
     var colType = headers.indexOf("ExpenseType");
     var colAmt  = headers.indexOf("Amount");
 
-    if (colID === -1) throw new Error("TransactionID column not found.");
+    if (colID   === -1) throw new Error("TransactionID column not found.");
+    if (colDate === -1) throw new Error("TransactionDate column not found.");
+    if (colCard === -1) throw new Error("CreditCard column not found.");
+    if (colType === -1) throw new Error("ExpenseType column not found.");
+    if (colAmt  === -1) throw new Error("Amount column not found.");
 
     var rowIndex = -1;
     for (var i = 1; i < data.length; i++) {
@@ -384,13 +388,22 @@ function updateTransaction(payload) {
     }
     if (rowIndex === -1) throw new Error("Transaction not found: " + payload.transactionID);
 
-    if (colDate !== -1) sheet.getRange(rowIndex, colDate + 1).setValue(formatDate(payload.date));
-    if (colCard !== -1) sheet.getRange(rowIndex, colCard + 1).setValue(payload.card);
-    if (colType !== -1) sheet.getRange(rowIndex, colType + 1).setValue(payload.expenseType);
-    if (colAmt  !== -1) sheet.getRange(rowIndex, colAmt  + 1).setValue(amount);
+    // Build updated row preserving all existing column values,
+    // then overwrite only the four editable columns in a single write.
+    var updatedRow = data[rowIndex - 1].slice();
+    updatedRow[colDate] = formatDate(payload.date);
+    updatedRow[colCard] = payload.card;
+    updatedRow[colType] = payload.expenseType;
+    updatedRow[colAmt]  = amount;
+
+    sheet.getRange(rowIndex, 1, 1, updatedRow.length).setValues([updatedRow]);
+
+    Logger.log("updateTransaction | id=%s | date=%s | card=%s | type=%s | amount=%s",
+      payload.transactionID, payload.date, payload.card, payload.expenseType, amount);
 
     return JSON.parse(JSON.stringify({ success: true }));
   } catch(err) {
+    Logger.log("updateTransaction | ERROR | %s", err.message);
     return { success: false, error: err.message };
   }
 }
@@ -459,7 +472,89 @@ function submitPayment(payload) {
 
     return JSON.parse(JSON.stringify({ success: true, paymentID: payID }));
   } catch(err) {
+    Logger.log("submitPayment | ERROR | %s", err.message);
     return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Bulk payment submission — processes multiple transactions in a single call.
+ * Reads both sheets once, validates each transaction, then writes all valid
+ * payments in a single batch setValues call.
+ *
+ * payload: { ids: [transactionID, ...], paymentDate: 'YYYY-MM-DD' }
+ * returns: { success, saved, errors: [{ id, error }] }
+ */
+function submitPayments(payload) {
+  var lock = LockService.getUserLock();
+  try {
+    if (!payload || !payload.ids || !payload.ids.length) throw new Error("No transaction IDs provided.");
+    if (!payload.paymentDate) throw new Error("Payment date is required.");
+
+    lock.waitLock(10000); // wait up to 10s for any concurrent call to finish
+
+    var txnSheet = getSheet(SHEET.TRANSACTIONS);
+    var paySheet = getOrCreateSheet(SHEET.PAYMENTS,
+      ["PaymentID","TransactionID","PaymentDate","Amount","SubmittedBy","CreatedAt"]);
+
+    // ── Read both sheets once ─────────────────────────────────
+    var txnData = txnSheet.getLastRow() > 1 ? sheetToObjects(txnSheet) : [];
+    var payData = paySheet.getLastRow()  > 1 ? sheetToObjects(paySheet) : [];
+
+    // ── Build ID maps — O(1) lookups instead of O(n) scans ───
+    var txnMap = {};
+    txnData.forEach(function(t) { txnMap[safeStr(t["TransactionID"])] = t; });
+
+    var paidMap = {};
+    payData.forEach(function(p) {
+      var id = safeStr(p["TransactionID"]);
+      paidMap[id] = Math.round(((paidMap[id] || 0) + safeFloat(p["Amount"])) * 100) / 100;
+    });
+
+    var submittedBy  = safeStr(Session.getActiveUser().getEmail()) || "unknown";
+    var paymentDate  = formatDate(payload.paymentDate);
+    var now          = new Date();
+    var errors       = [];
+    var newRows      = [];
+
+    // ── Validate each ID and build rows ───────────────────────
+    payload.ids.forEach(function(id) {
+      var txn = txnMap[id];
+      if (!txn) {
+        errors.push({ id: id, error: "Transaction not found" });
+        return;
+      }
+      var original  = safeFloat(txn["Amount"]);
+      var totalPaid = paidMap[id] || 0;
+      var amtOwed   = Math.round((original - totalPaid) * 100) / 100;
+      if (amtOwed <= 0) {
+        errors.push({ id: id, error: "Nothing owed on this transaction" });
+        return;
+      }
+      var payID = "PAY-" + Utilities.getUuid();
+      newRows.push([payID, id, paymentDate, amtOwed, submittedBy, now]);
+    });
+
+    // ── Batch write all valid rows in one call ────────────────
+    if (newRows.length > 0) {
+      var startRow = paySheet.getLastRow() + 1;
+      paySheet.getRange(startRow, 1, newRows.length, newRows[0].length).setValues(newRows);
+    }
+
+    Logger.log("submitPayments | requested=%s | saved=%s | errors=%s | date=%s",
+      payload.ids.length, newRows.length, errors.length, payload.paymentDate);
+
+    return JSON.parse(JSON.stringify({
+      success: true,
+      saved:   newRows.length,
+      errors:  errors
+    }));
+
+  } catch(err) {
+    Logger.log("submitPayments | ERROR | %s", err.message);
+    return { success: false, error: err.message };
+  } finally {
+    try { lock.releaseLock(); } catch(e) {}
   }
 }
 

@@ -7,6 +7,28 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.3.0] - 2026-03-14
+
+### Added
+- `submitPayments` (bulk) — new server-side function that processes all selected transactions in a single Apps Script call. Reads both sheets once, builds ID maps for O(1) lookups, validates each transaction, then writes all payment rows in a single batch `setValues` call. Uses `Utilities.getUuid()` for payment IDs to prevent same-second collisions during bulk writes. Wrapped in `LockService.getUserLock()` to prevent overlapping calls. Returns `{ success, saved, errors: [{ id, error }] }` so the client knows exactly what happened per transaction
+
+### Fixed
+- Bulk payment now reports failed transaction IDs explicitly in the toast (e.g. "Failed: TXN-20260310-143022") instead of a generic error count
+- Dashboard budget figures now use `normalizeBudgetToRange` — consistent with the Reports page. Previously the dashboard used an annual average (bi-weekly × 26/12) which diverged from the actual days in the viewed window
+- `updateTransaction` now fails loudly if any required column is missing rather than silently skipping writes
+- `updateTransaction` now writes all four columns in a single `setValues` call instead of four separate `setValue` calls
+
+### Removed
+- `normalizeBudgetToMonthly` — fully replaced by `normalizeBudgetToRange` which is now used by both dashboard and reports
+- Sequential `processNext` payment chain in frontend — replaced by single `submitPayments` call
+- `finishPayments` frontend function — no longer needed
+
+### Changed
+- `submitPayments` frontend function simplified to a single `google.script.run` call
+- Logging added to `updateTransaction`, `submitPayment`, and `submitPayments` for both success and error paths
+
+---
+
 ## [1.2.3] - 2026-03-14
 
 ### Fixed

@@ -1,7 +1,7 @@
 {
-  "version": "1.2.3",
+  "version": "1.3.0",
   "releaseDate": "2026-03-14",
-  "notes": "Dashboard budget now scales to actual days in the viewed window — consistent with Reports. Update checker fixed to only prompt when a newer version is available. Internal code cleanup with no behavior changes.",
+  "notes": "Bulk payments now process in a single server call — faster, more reliable, and reports exactly which transactions failed by ID. Dashboard budget figures now match Reports math exactly. Code cleanup and internal improvements.",
   "codeUrl": "https://raw.githubusercontent.com/andrew-delisle/cardBalance/main/Code.gs",
   "htmlUrl": "https://raw.githubusercontent.com/andrew-delisle/cardBalance/main/Index.html"
 }
