@@ -4,7 +4,7 @@
 //  No hardcoded Spreadsheet ID needed.
 // ============================================================
 
-var APP_VERSION = "1.3.0";
+var APP_VERSION = "1.4.0";
 
 /** Callable from Install.gs so the version lives in exactly one place. */
 function getAppVersion() {
@@ -58,6 +58,32 @@ function getOrCreateSheet(name, headers) {
   return sheet;
 }
 
+/**
+ * Ensures a column exists in a sheet by name.
+ * If the column is missing it is appended to the right of the existing headers.
+ * Existing data rows get a blank value in the new column.
+ * Safe to call on every app load — exits immediately if column already exists.
+ */
+function ensureColumn(sheet, columnName, defaultValue) {
+  if (!sheet || sheet.getLastRow() < 1) return;
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  if (headers.indexOf(columnName) !== -1) return; // already exists
+
+  var newCol = headers.length + 1;
+  sheet.getRange(1, newCol).setValue(columnName);
+
+  // Fill existing data rows with the default value
+  var dataRows = sheet.getLastRow() - 1;
+  if (dataRows > 0 && defaultValue !== undefined) {
+    var fill = [];
+    for (var i = 0; i < dataRows; i++) fill.push([defaultValue]);
+    sheet.getRange(2, newCol, dataRows, 1).setValues(fill);
+  }
+
+  Logger.log("ensureColumn | sheet=%s | column=%s | addedAt=%s | existingRows=%s",
+    sheet.getName(), columnName, newCol, dataRows);
+}
+
 function generateID(prefix) {
   var now = new Date();
   var pad = function(n) { return String(n).padStart(2, "0"); };
@@ -74,6 +100,13 @@ function formatDate(date) {
   var d = parseSheetDate(date);
   if (!d) return String(date);
   return (d.getMonth() + 1) + "/" + d.getDate() + "/" + d.getFullYear();
+}
+
+function formatTimestamp(d) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) d = new Date();
+  var pad = function(n) { return String(n).padStart(2, "0"); };
+  return (d.getMonth() + 1) + "/" + d.getDate() + "/" + d.getFullYear() +
+    " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
 }
 
 function parseSheetDate(val) {
@@ -223,6 +256,11 @@ function getAppData() {
   try {
     var config = readConfig();
 
+    // Schema migration: ensure Reimbursable column exists on Transactions sheet.
+    // Safe to call on every load — exits immediately if column already present.
+    var txnSheetForMigration = getSheetOrNull(SHEET.TRANSACTIONS);
+    if (txnSheetForMigration) ensureColumn(txnSheetForMigration, "Reimbursable", "false");
+
     // Guard: ensure config arrays are always arrays even if readConfig returns partial data
     var safeCards       = Array.isArray(config.cards)       ? config.cards       : [];
     var safeTypes       = Array.isArray(config.expenseTypes) ? config.expenseTypes : [];
@@ -310,7 +348,8 @@ function getUnpaidTransactionsInternal() {
         expenseType:     safeStr(t["ExpenseType"]),
         originalAmount:  original,
         totalPaid:       paid,
-        amountOwed:      owed
+        amountOwed:      owed,
+        reimbursable:    safeStr(t["Reimbursable"]) === "true"
       });
     }
   });
@@ -341,11 +380,37 @@ function submitTransaction(payload) {
       throw new Error("Expense type '" + payload.expenseType + "' not found in Config. Please check Setup.");
 
     var sheet = getOrCreateSheet(SHEET.TRANSACTIONS,
-      ["TransactionID","TransactionDate","CreditCard","ExpenseType","Amount","SubmittedBy","CreatedAt"]);
+      ["TransactionID","TransactionDate","CreditCard","ExpenseType","Amount","Reimbursable","SubmittedBy","CreatedAt"]);
 
-    var txnID = generateID("TXN");
-    sheet.appendRow([txnID, formatDate(payload.date), payload.card, payload.expenseType,
-      amount, safeStr(Session.getActiveUser().getEmail()) || "unknown", new Date()]);
+    // Read actual column positions from the sheet so the write is always
+    // correct regardless of column order (e.g. Reimbursable added via migration).
+    var sheetHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]
+      .map(function(h) { return safeStr(h); });
+
+    var txnID        = generateID("TXN");
+    var reimbursable = payload.reimbursable ? "true" : "false";
+    var submittedBy  = safeStr(Session.getActiveUser().getEmail()) || "unknown";
+    var now          = new Date();
+
+    var row = [];
+    sheetHeaders.forEach(function(h) {
+      switch (h) {
+        case "TransactionID":   row.push(txnID);                      break;
+        case "TransactionDate": row.push(formatDate(payload.date));    break;
+        case "CreditCard":      row.push(payload.card);                break;
+        case "ExpenseType":     row.push(payload.expenseType);         break;
+        case "Amount":          row.push(amount);                      break;
+        case "Reimbursable":    row.push(reimbursable);                break;
+        case "SubmittedBy":     row.push(submittedBy);                 break;
+        case "CreatedAt":       row.push(formatTimestamp(now));                         break;
+        default:                row.push("");                          break;
+      }
+    });
+
+    sheet.appendRow(row);
+
+    Logger.log("submitTransaction | id=%s | card=%s | type=%s | amount=%s | reimbursable=%s",
+      txnID, payload.card, payload.expenseType, amount, reimbursable);
 
     return JSON.parse(JSON.stringify({ success: true, transactionID: txnID }));
   } catch(err) {
@@ -366,12 +431,13 @@ function updateTransaction(payload) {
     var data  = sheet.getDataRange().getValues();
     if (data.length < 2) throw new Error("No transactions found.");
 
-    var headers = data[0].map(function(h) { return safeStr(h); });
-    var colID   = headers.indexOf("TransactionID");
-    var colDate = headers.indexOf("TransactionDate");
-    var colCard = headers.indexOf("CreditCard");
-    var colType = headers.indexOf("ExpenseType");
-    var colAmt  = headers.indexOf("Amount");
+    var headers  = data[0].map(function(h) { return safeStr(h); });
+    var colID    = headers.indexOf("TransactionID");
+    var colDate  = headers.indexOf("TransactionDate");
+    var colCard  = headers.indexOf("CreditCard");
+    var colType  = headers.indexOf("ExpenseType");
+    var colAmt   = headers.indexOf("Amount");
+    var colReimb = headers.indexOf("Reimbursable"); // optional — may not exist on older sheets
 
     if (colID   === -1) throw new Error("TransactionID column not found.");
     if (colDate === -1) throw new Error("TransactionDate column not found.");
@@ -382,24 +448,24 @@ function updateTransaction(payload) {
     var rowIndex = -1;
     for (var i = 1; i < data.length; i++) {
       if (safeStr(data[i][colID]) === safeStr(payload.transactionID)) {
-        rowIndex = i + 1; // 1-based sheet row
+        rowIndex = i + 1;
         break;
       }
     }
     if (rowIndex === -1) throw new Error("Transaction not found: " + payload.transactionID);
 
-    // Build updated row preserving all existing column values,
-    // then overwrite only the four editable columns in a single write.
     var updatedRow = data[rowIndex - 1].slice();
     updatedRow[colDate] = formatDate(payload.date);
     updatedRow[colCard] = payload.card;
     updatedRow[colType] = payload.expenseType;
     updatedRow[colAmt]  = amount;
+    if (colReimb !== -1) updatedRow[colReimb] = payload.reimbursable ? "true" : "false";
 
     sheet.getRange(rowIndex, 1, 1, updatedRow.length).setValues([updatedRow]);
 
-    Logger.log("updateTransaction | id=%s | date=%s | card=%s | type=%s | amount=%s",
-      payload.transactionID, payload.date, payload.card, payload.expenseType, amount);
+    Logger.log("updateTransaction | id=%s | date=%s | card=%s | type=%s | amount=%s | reimbursable=%s",
+      payload.transactionID, payload.date, payload.card, payload.expenseType, amount,
+      colReimb !== -1 ? (payload.reimbursable ? "true" : "false") : "column-missing");
 
     return JSON.parse(JSON.stringify({ success: true }));
   } catch(err) {
@@ -466,9 +532,29 @@ function submitPayment(payload) {
       throw new Error("Payment of $" + inputAmount.toFixed(2) +
         " exceeds amount owed ($" + amtOwed.toFixed(2) + ").");
 
-    var payID = generateID("PAY");
-    paySheet.appendRow([payID, payload.transactionID, formatDate(payload.paymentDate),
-      inputAmount, safeStr(Session.getActiveUser().getEmail()) || "unknown", new Date()]);
+    var payID       = generateID("PAY");
+    var submittedBy = safeStr(Session.getActiveUser().getEmail()) || "unknown";
+    var now         = new Date();
+    var payDate     = formatDate(payload.paymentDate);
+
+    // Read actual column positions so write is correct regardless of column order
+    var payHeaders = paySheet.getRange(1, 1, 1, paySheet.getLastColumn()).getValues()[0]
+      .map(function(h) { return safeStr(h); });
+
+    var row = [];
+    payHeaders.forEach(function(h) {
+      switch (h) {
+        case "PaymentID":      row.push(payID);         break;
+        case "TransactionID":  row.push(payload.transactionID); break;
+        case "PaymentDate":    row.push(payDate);        break;
+        case "Amount":         row.push(inputAmount);    break;
+        case "SubmittedBy":    row.push(submittedBy);    break;
+        case "CreatedAt":      row.push(formatTimestamp(now));            break;
+        default:               row.push("");             break;
+      }
+    });
+
+    paySheet.appendRow(row);
 
     return JSON.parse(JSON.stringify({ success: true, paymentID: payID }));
   } catch(err) {
@@ -517,6 +603,11 @@ function submitPayments(payload) {
     var errors       = [];
     var newRows      = [];
 
+    // Read actual payment sheet column order once — used for every row we build
+    var payHeaders = paySheet.getLastRow() > 0
+      ? paySheet.getRange(1, 1, 1, paySheet.getLastColumn()).getValues()[0].map(function(h) { return safeStr(h); })
+      : ["PaymentID","TransactionID","PaymentDate","Amount","SubmittedBy","CreatedAt"];
+
     // ── Validate each ID and build rows ───────────────────────
     payload.ids.forEach(function(id) {
       var txn = txnMap[id];
@@ -532,7 +623,19 @@ function submitPayments(payload) {
         return;
       }
       var payID = "PAY-" + Utilities.getUuid();
-      newRows.push([payID, id, paymentDate, amtOwed, submittedBy, now]);
+      var row = [];
+      payHeaders.forEach(function(h) {
+        switch (h) {
+          case "PaymentID":      row.push(payID);        break;
+          case "TransactionID":  row.push(id);           break;
+          case "PaymentDate":    row.push(paymentDate);  break;
+          case "Amount":         row.push(amtOwed);      break;
+          case "SubmittedBy":    row.push(submittedBy);  break;
+          case "CreatedAt":      row.push(formatTimestamp(now));          break;
+          default:               row.push("");           break;
+        }
+      });
+      newRows.push(row);
     });
 
     // ── Batch write all valid rows in one call ────────────────
@@ -730,7 +833,8 @@ function getAllTransactionSummaries() {
       expenseType:   safeStr(t["ExpenseType"]),
       amount:        original,
       totalPaid:     paid,
-      amountOwed:    Math.max(owed, 0)
+      amountOwed:    Math.max(owed, 0),
+      reimbursable:  safeStr(t["Reimbursable"]) === "true"
     };
   });
 }
@@ -817,14 +921,20 @@ function getDashboardData(mode) {
       }
     });
 
-    var windowSpend = 0, windowSpendByType = {};
+    var windowSpend = 0, windowReimbursable = 0, windowSpendByType = {};
     txns.forEach(function(t) {
       if (t.date >= windowStart && t.date <= windowEnd) {
-        windowSpend += t.amount;
-        windowSpendByType[t.expenseType] = Math.round(
-          ((windowSpendByType[t.expenseType] || 0) + t.amount) * 100) / 100;
+        if (t.reimbursable) {
+          windowReimbursable += t.amount;
+        } else {
+          windowSpend += t.amount;
+          windowSpendByType[t.expenseType] = Math.round(
+            ((windowSpendByType[t.expenseType] || 0) + t.amount) * 100) / 100;
+        }
       }
     });
+    windowSpend        = Math.round(windowSpend        * 100) / 100;
+    windowReimbursable = Math.round(windowReimbursable * 100) / 100;
 
     var budgetFrequency = config.budgetFrequency || "monthly";
     var normalizedBudgets = {};
@@ -834,8 +944,8 @@ function getDashboardData(mode) {
 
     var totalBudget = Object.keys(normalizedBudgets).reduce(function(s, k) { return s + normalizedBudgets[k]; }, 0);
 
-    Logger.log("getDashboardData | mode: %s | budgetFrequency: %s | rawBudgets: %s | normalizedBudgets: %s | totalBudget: %s | windowStart: %s | windowEnd: %s | windowSpend: %s",
-      mode, budgetFrequency, JSON.stringify(config.budgets), JSON.stringify(normalizedBudgets), totalBudget.toFixed(2), windowStart, windowEnd, windowSpend.toFixed(2));
+    Logger.log("getDashboardData | mode: %s | budgetFrequency: %s | rawBudgets: %s | normalizedBudgets: %s | totalBudget: %s | windowStart: %s | windowEnd: %s | windowSpend: %s | windowReimbursable: %s",
+      mode, budgetFrequency, JSON.stringify(config.budgets), JSON.stringify(normalizedBudgets), totalBudget.toFixed(2), windowStart, windowEnd, windowSpend.toFixed(2), windowReimbursable.toFixed(2));
 
     var owedByCardArr = Object.keys(owedByCard).map(function(c) {
       return { card: c, owed: owedByCard[c] };
@@ -843,16 +953,17 @@ function getDashboardData(mode) {
 
     return JSON.parse(JSON.stringify({
       success: true, mode: mode,
-      windowStart:     windowStart,
-      windowEnd:       windowEnd,
-      totalOwed:       Math.round(totalOwed   * 100) / 100,
-      totalBudget:     Math.round(totalBudget * 100) / 100,
-      windowSpend:     Math.round(windowSpend * 100) / 100,
-      remaining:       Math.round((totalBudget - windowSpend) * 100) / 100,
-      owedByCard:      owedByCardArr,
-      spendByType:     windowSpendByType,
-      budgets:         normalizedBudgets,
-      budgetFrequency: budgetFrequency
+      windowStart:         windowStart,
+      windowEnd:           windowEnd,
+      totalOwed:           Math.round(totalOwed   * 100) / 100,
+      totalBudget:         Math.round(totalBudget * 100) / 100,
+      windowSpend:         windowSpend,
+      windowReimbursable:  windowReimbursable,
+      remaining:           Math.round((totalBudget - windowSpend) * 100) / 100,
+      owedByCard:          owedByCardArr,
+      spendByType:         windowSpendByType,
+      budgets:             normalizedBudgets,
+      budgetFrequency:     budgetFrequency
     }));
   } catch(err) {
     return { success: false, error: err.message };
@@ -896,11 +1007,17 @@ function getReportsData(startDate, endDate) {
       normalizedBudgets[k] = Math.round(normalizeBudgetToRange(config.budgets[k], budgetFrequency, startDate, endDate) * 100) / 100;
     });
 
-    var actualByType = {}, txnCountByType = {};
+    var actualByType = {}, txnCountByType = {}, reimbursableTotal = 0, reimbursableCount = 0;
     filtered.forEach(function(t) {
-      actualByType[t.expenseType]   = Math.round(((actualByType[t.expenseType]   || 0) + t.amount) * 100) / 100;
-      txnCountByType[t.expenseType] = (txnCountByType[t.expenseType] || 0) + 1;
+      if (t.reimbursable) {
+        reimbursableTotal += t.amount;
+        reimbursableCount++;
+      } else {
+        actualByType[t.expenseType]   = Math.round(((actualByType[t.expenseType]   || 0) + t.amount) * 100) / 100;
+        txnCountByType[t.expenseType] = (txnCountByType[t.expenseType] || 0) + 1;
+      }
     });
+    reimbursableTotal = Math.round(reimbursableTotal * 100) / 100;
 
     var allTypes = Object.keys(normalizedBudgets).concat(Object.keys(actualByType))
       .filter(function(v, i, a) { return a.indexOf(v) === i; }).sort();
@@ -935,10 +1052,20 @@ function getReportsData(startDate, endDate) {
     // ── CUMULATIVE TREND (months in range) ───────────────────
     var runningTotal = 0;
     var cumulative = rangeMonths.map(function(ym) {
-      var monthTotal = 0;
-      txns.forEach(function(t) { if (t.date.substring(0, 7) === ym) monthTotal += t.amount; });
+      var monthTotal = 0, monthReimbursable = 0;
+      txns.forEach(function(t) {
+        if (t.date.substring(0, 7) === ym) {
+          if (t.reimbursable) monthReimbursable += t.amount;
+          else                monthTotal        += t.amount;
+        }
+      });
       runningTotal += monthTotal;
-      return { month: ym, monthTotal: Math.round(monthTotal * 100) / 100, cumulative: Math.round(runningTotal * 100) / 100 };
+      return {
+        month:             ym,
+        monthTotal:        Math.round(monthTotal        * 100) / 100,
+        monthReimbursable: Math.round(monthReimbursable * 100) / 100,
+        cumulative:        Math.round(runningTotal      * 100) / 100
+      };
     });
 
     // ── SPENDING BY CARD ─────────────────────────────────────
@@ -1012,18 +1139,20 @@ function getReportsData(startDate, endDate) {
     }
 
     return JSON.parse(JSON.stringify({
-      success:         true,
-      startDate:       startDate,
-      endDate:         endDate,
-      availableMonths: availableMonths,
-      budgetVsActual:  budgetVsActual,
-      stackedBar:      stackedBar,
-      cumulative:      cumulative,
-      allExpenseTypes: allExpenseTypes,
-      totalBudget:     Object.keys(normalizedBudgets).reduce(function(s, k) { return s + normalizedBudgets[k]; }, 0),
-      cardSpending:    cardSpending,
-      cardColors:      config.cardColors || {},
-      cashFlow:        cashFlow
+      success:            true,
+      startDate:          startDate,
+      endDate:            endDate,
+      availableMonths:    availableMonths,
+      budgetVsActual:     budgetVsActual,
+      reimbursableTotal:  reimbursableTotal,
+      reimbursableCount:  reimbursableCount,
+      stackedBar:         stackedBar,
+      cumulative:         cumulative,
+      allExpenseTypes:    allExpenseTypes,
+      totalBudget:        Object.keys(normalizedBudgets).reduce(function(s, k) { return s + normalizedBudgets[k]; }, 0),
+      cardSpending:       cardSpending,
+      cardColors:         config.cardColors || {},
+      cashFlow:           cashFlow
     }));
   } catch(err) {
     return { success: false, error: 'getReportsData: ' + err.message };

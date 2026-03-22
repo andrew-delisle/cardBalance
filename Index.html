@@ -51,7 +51,7 @@ nav { position:sticky; bottom:0; flex-shrink:0; width:100%; height:5rem; backgro
 .field:last-of-type { margin-bottom:0; }
 .field label { font-size:.7rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--sub); }
 .field input,.field select { width:100%; background:var(--bg); border:1.5px solid var(--border); border-radius:.625rem; color:var(--text); font-family:var(--sans); font-size:1rem; font-weight:500; padding:.8rem 1rem; outline:none; appearance:none; -webkit-appearance:none; transition:border-color .15s,box-shadow .15s; min-height:3.25rem; }
-.field input:focus,.field select:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-lt); }
+.field input[type="checkbox"] { appearance:auto; -webkit-appearance:auto; width:auto; min-height:auto; padding:0; border:none; background:none; box-shadow:none; }
 .amount-wrap { position:relative; }
 .amount-wrap::before { content:"$"; position:absolute; left:1rem; top:50%; transform:translateY(-50%); font-size:1.1rem; font-weight:600; color:var(--sub); pointer-events:none; }
 .amount-wrap input { padding-left:2rem; font-family:var(--mono); font-size:1.4rem !important; }
@@ -97,6 +97,7 @@ nav { position:sticky; bottom:0; flex-shrink:0; width:100%; height:5rem; backgro
 .txn-row-meta { font-size:.8rem; color:var(--muted); }
 .txn-row-amount { text-align:right; flex-shrink:0; margin-left:.75rem; }
 .owed-value { font-family:var(--mono); font-size:1.15rem; font-weight:500; color:var(--accent); }
+.reimb-badge { display:inline-flex; align-items:center; justify-content:center; width:1.1rem; height:1.1rem; border-radius:50%; background:var(--muted); color:#fff; font-size:.6rem; font-weight:800; flex-shrink:0; margin-left:.35rem; vertical-align:middle; line-height:1; }
 
 /* Swipe actions */
 .txn-row-actions { position:absolute; right:0; top:0; bottom:0; display:flex; align-items:stretch; opacity:0; pointer-events:none; transition:opacity .15s; }
@@ -411,6 +412,10 @@ body.mobile-landscape .snap-value { font-size:1rem; }
         <div class="field"><label>Credit Card</label><div class="select-wrap"><select id="txn-card"><option value="">Loading...</option></select></div></div>
         <div class="field"><label>Expense Type</label><div class="select-wrap"><select id="txn-type"><option value="">Loading...</option></select></div></div>
         <div class="field"><label>Amount</label><div class="amount-wrap"><input type="number" id="txn-amount" inputmode="decimal" placeholder="0.00" step="0.01" min="0.01"/></div></div>
+        <div class="field" style="flex-direction:row;align-items:center;gap:.6rem;margin-bottom:.5rem">
+          <input type="checkbox" id="txn-reimbursable" style="width:1.1rem;height:1.1rem;accent-color:var(--accent);flex-shrink:0"/>
+          <label for="txn-reimbursable" style="font-size:.875rem;font-weight:600;color:var(--sub);margin:0;cursor:pointer">Reimbursable</label>
+        </div>
         <div class="form-submit"><button class="btn btn-primary" id="txn-submit" onclick="submitTransaction()">Add Transaction</button></div>
       </div>
     </div>
@@ -827,6 +832,10 @@ body.mobile-landscape .snap-value { font-size:1rem; }
   <div class="field"><label>Credit Card</label><div class="select-wrap"><select id="edit-card"></select></div></div>
   <div class="field"><label>Expense Type</label><div class="select-wrap"><select id="edit-type"></select></div></div>
   <div class="field"><label>Amount</label><div class="amount-wrap"><input type="number" id="edit-amount" inputmode="decimal" step="0.01" min="0.01"/></div></div>
+  <div class="field" style="flex-direction:row;align-items:center;gap:.6rem;margin-bottom:.5rem">
+    <input type="checkbox" id="edit-reimbursable" style="width:1.1rem;height:1.1rem;accent-color:var(--accent);flex-shrink:0"/>
+    <label for="edit-reimbursable" style="font-size:.875rem;font-weight:600;color:var(--sub);margin:0;cursor:pointer">Reimbursable</label>
+  </div>
   <div class="sheet-actions">
     <button class="btn btn-primary" id="edit-save-btn" onclick="saveEdit()">Save Changes</button>
     <button class="btn btn-ghost" onclick="closeEditSheet()">Cancel</button>
@@ -849,7 +858,7 @@ body.mobile-landscape .snap-value { font-size:1rem; }
 
 <script>
 // ── VERSION ─────────────────────────────────────────────────────
-var HTML_VERSION = "1.3.0";
+var HTML_VERSION = "1.4.0";
 
 // ── DEBUG LOGGING ───────────────────────────────────────────────
 var DEBUG      = false;
@@ -1174,6 +1183,7 @@ function submitTransaction() {
   var card   = document.getElementById('txn-card').value;
   var type   = document.getElementById('txn-type').value;
   var amount = document.getElementById('txn-amount').value;
+  var reimb  = document.getElementById('txn-reimbursable').checked;
 
   if (!date)                              { showToast('Please select a date',          'error'); return; }
   if (!card)                              { showToast('Please select a card',          'error'); return; }
@@ -1189,6 +1199,7 @@ function submitTransaction() {
       if (!res || !res.success) { showToast((res && res.error) || 'Error saving', 'error'); return; }
       showToast('Transaction saved!', 'success');
       document.getElementById('txn-amount').value = '';
+      document.getElementById('txn-reimbursable').checked = false;
       setToday('txn-date');
       loadAppData();
     })
@@ -1196,7 +1207,7 @@ function submitTransaction() {
       btn.disabled = false; btn.textContent = 'Add Transaction';
       showToast('Error: ' + ((e && e.message) || 'unknown'), 'error');
     })
-    .submitTransaction({ date: date, card: card, expenseType: type, amount: amount });
+    .submitTransaction({ date: date, card: card, expenseType: type, amount: amount, reimbursable: reimb });
 }
 
 // ── PAYABLES ───────────────────────────────────────────────────
@@ -1368,7 +1379,7 @@ function renderPayables(txns) {
           '<div class="txn-row-top">' +
             '<div>' +
               '<div class="txn-row-card">' + esc(t.card) + '</div>' +
-              '<div class="txn-row-meta">' + esc(t.expenseType) + ' \u00b7 ' + esc(t.transactionDate) + '</div>' +
+              '<div class="txn-row-meta">' + esc(t.expenseType) + ' \u00b7 ' + esc(t.transactionDate) + (t.reimbursable ? ' <span class="reimb-badge" title="Reimbursable">R</span>' : '') + '</div>' +
             '</div>' +
             '<div style="display:flex;align-items:center;gap:.5rem">' +
               '<div class="txn-row-amount"><div class="owed-value">$' + t.amountOwed.toFixed(2) + '</div></div>' +
@@ -1611,6 +1622,8 @@ function openEditSheet(id) {
   if (typeSel) typeSel.value = t.expenseType;
   var amtEl = document.getElementById('edit-amount');
   if (amtEl) amtEl.value = t.originalAmount.toFixed(2);
+  var reimbEl = document.getElementById('edit-reimbursable');
+  if (reimbEl) reimbEl.checked = !!t.reimbursable;
 
   document.getElementById('edit-overlay').classList.add('open');
   setTimeout(function() { document.getElementById('edit-sheet').classList.add('open'); }, 10);
@@ -1628,6 +1641,7 @@ function saveEdit() {
   var card   = document.getElementById('edit-card').value;
   var type   = document.getElementById('edit-type').value;
   var amount = document.getElementById('edit-amount').value;
+  var reimb  = document.getElementById('edit-reimbursable').checked;
 
   if (!date)                              { showToast('Date is required',           'error'); return; }
   if (!card)                              { showToast('Card is required',           'error'); return; }
@@ -1651,7 +1665,7 @@ function saveEdit() {
       closeEditSheet();
       showToast('Error: ' + ((e && e.message) || 'unknown'), 'error');
     })
-    .updateTransaction({ transactionID: id, date: date, card: card, expenseType: type, amount: amount });
+    .updateTransaction({ transactionID: id, date: date, card: card, expenseType: type, amount: amount, reimbursable: reimb });
 }
 
 // ── PAY SHEET ──────────────────────────────────────────────────
@@ -2146,6 +2160,15 @@ function renderDashboard(res) {
     });
     html += '</div>';
   }
+
+  // Reimbursable line — shown only when there are reimbursable transactions
+  if (res.windowReimbursable > 0) {
+    html += '<div style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;font-size:.75rem">';
+    html += '<span style="color:var(--muted);font-weight:600">Reimbursable <span class="reimb-badge" style="vertical-align:middle">R</span></span>';
+    html += '<span style="font-family:var(--mono);color:var(--muted)">$' + fmt(res.windowReimbursable) + '</span>';
+    html += '</div>';
+  }
+
   html += '</div>';
 
   if (res.owedByCard && res.owedByCard.length) {
@@ -2296,6 +2319,16 @@ function renderBVA(res) {
   html += '<td class="num">$' + fmt(totalBudget) + '</td><td class="num">$' + fmt(totalActual) + '</td>';
   html += '<td class="num ' + (tv >= 0 ? 'pos' : 'neg') + '">' + (tv >= 0 ? '+' : '') + '$' + fmt(Math.abs(tv)) + '</td>';
   html += '<td class="num">' + (totalBudget > 0 ? (totalActual/totalBudget*100).toFixed(1) + '%' : '\u2014') + '</td></tr>';
+
+  // Reimbursable row — outside budget tracking
+  if (res.reimbursableTotal > 0) {
+    html += '<tr style="color:var(--muted);border-top:1px dashed var(--border)">';
+    html += '<td><div style="font-weight:600">Reimbursable <span class="reimb-badge">R</span></div>';
+    html += '<div class="bva-count">' + res.reimbursableCount + ' txn' + (res.reimbursableCount !== 1 ? 's' : '') + ' \u00b7 not counted against budget</div></td>';
+    html += '<td class="num">\u2014</td><td class="num">$' + fmt(res.reimbursableTotal) + '</td>';
+    html += '<td class="num">\u2014</td><td class="num">\u2014</td></tr>';
+  }
+
   html += '</tbody></table></div></div>';
   document.getElementById('report-bva-panel').innerHTML = html;
 }
@@ -2397,7 +2430,7 @@ function renderTrend(res) {
   var budget = res.totalBudget;
 
   var maxVal = Math.max(
-    data.reduce(function(m, d) { return Math.max(m, d.cumulative, d.monthTotal); }, 0),
+    data.reduce(function(m, d) { return Math.max(m, d.cumulative, d.monthTotal + d.monthReimbursable); }, 0),
     budget
   ) * 1.1 || 100;
 
@@ -2420,15 +2453,31 @@ function renderTrend(res) {
     svg += '<text x="' + (W - padR - 2) + '" y="' + (by - 3) + '" text-anchor="end" fill="var(--muted)" font-size="8">budget</text>';
   }
 
-  // Monthly bars and labels
-  var barW = Math.max(4, Math.min(20, innerW / Math.max(data.length, 1) - 4));
+  // Monthly bars — split into two side-by-side bars when reimbursable exists
+  var hasReimb    = data.some(function(d) { return d.monthReimbursable > 0; });
+  var totalBarW   = Math.max(6, Math.min(28, innerW / Math.max(data.length, 1) - 4));
+  var spendBarW   = hasReimb ? Math.floor(totalBarW * 0.58) : totalBarW;
+  var reimbBarW   = hasReimb ? Math.floor(totalBarW * 0.38) : 0;
+  var barGap      = hasReimb ? 2 : 0;
+
   data.forEach(function(d, i) {
+    var cx = xPos(i);
+    // Spend bar (left or centered)
+    var spendX = hasReimb ? cx - (spendBarW + barGap / 2) : cx - spendBarW / 2;
     var bh = chartH * d.monthTotal / maxVal;
-    svg += '<rect x="' + (xPos(i) - barW / 2) + '" y="' + (padT + chartH - bh) + '" width="' + barW + '" height="' + bh + '" fill="var(--accent-lt)" rx="1"/>';
-    svg += '<text x="' + xPos(i) + '" y="' + (H - padB + 14) + '" text-anchor="middle" fill="var(--sub)" font-size="9">' + fmtMonthShort(d.month) + '</text>';
+    if (bh > 0) svg += '<rect x="' + spendX + '" y="' + (padT + chartH - bh) + '" width="' + spendBarW + '" height="' + bh + '" fill="var(--accent-lt)" rx="1"/>';
+
+    // Reimbursable bar (right)
+    if (hasReimb && d.monthReimbursable > 0) {
+      var reimbX = cx + barGap / 2;
+      var rh = chartH * d.monthReimbursable / maxVal;
+      svg += '<rect x="' + reimbX + '" y="' + (padT + chartH - rh) + '" width="' + reimbBarW + '" height="' + rh + '" fill="var(--border2)" rx="1"/>';
+    }
+
+    svg += '<text x="' + cx + '" y="' + (H - padB + 14) + '" text-anchor="middle" fill="var(--sub)" font-size="9">' + fmtMonthShort(d.month) + '</text>';
   });
 
-  // Cumulative line
+  // Cumulative line (spend only, excludes reimbursable)
   var pts = data.map(function(d, i) { return xPos(i) + ',' + yPos(d.cumulative); }).join(' ');
   svg += '<polyline points="' + pts + '" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>';
   data.forEach(function(d, i) {
@@ -2441,7 +2490,8 @@ function renderTrend(res) {
   svg += '</svg>';
 
   var legend = '<div class="chart-legend">' +
-    '<div class="legend-item"><div class="legend-dot" style="background:var(--accent-lt);border:1px solid var(--border)"></div>Monthly</div>' +
+    '<div class="legend-item"><div class="legend-dot" style="background:var(--accent-lt);border:1px solid var(--border)"></div>Spending</div>' +
+    (hasReimb ? '<div class="legend-item"><div class="legend-dot" style="background:var(--border2)"></div>Reimbursable</div>' : '') +
     '<div class="legend-item"><div style="width:.6rem;height:.15rem;background:var(--accent);border-radius:1px"></div>Cumulative</div>' +
     (budget ? '<div class="legend-item"><div style="width:.6rem;height:0;border-top:1px dashed var(--muted)"></div>Budget</div>' : '') +
     '</div>';

@@ -7,6 +7,27 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.4.0] - 2026-03-22
+
+### Added
+- Reimbursable transaction flag — checkbox on the Add Transaction form and Edit sheet. Reimbursable transactions are still tracked and appear in Payables (they still need to be paid), but are excluded from budget calculations
+- `R` badge on reimbursable rows in the Payables list
+- Dashboard — reimbursable spending shown as a separate labeled line below the type breakdown, only when reimbursable transactions exist in the window
+- Reports / Budget vs Actual — reimbursable transactions appear as a separate row at the bottom of the BVA table with a dashed separator and `—` in the budget/variance/% columns, noting they are not counted against budget
+- Reports / Trend — reimbursable amounts shown as a second bar per month alongside regular spending; cumulative line tracks personal spending only; legend updates dynamically when reimbursable data exists
+- `ensureColumn` helper — idempotent schema migration function that checks for a missing column by name and appends it with a default value for all existing rows. Called from `getAppData` on every load
+- Automatic schema migration on app load — `Reimbursable` column added to existing Transactions sheets with `"false"` as the default for all existing rows. No manual intervention needed
+- `formatTimestamp` helper — writes `CreatedAt` values as `M/D/YYYY HH:MM:SS` strings so the full timestamp is always preserved regardless of sheet cell format
+- Column-position-aware writes in `submitTransaction`, `submitPayment`, and `submitPayments` — row arrays are now built by reading actual sheet column headers at runtime, making all writes resilient to column reordering or future schema additions
+
+### Fixed
+- `submitTransaction` was writing data in the wrong columns when the sheet had a different column order than the hardcoded `appendRow` array (e.g. `Reimbursable` appended via migration). Now reads headers from the sheet and maps values by column name
+- `submitPayment` and `submitPayments` had the same hardcoded column order issue — both now read payment sheet headers at runtime
+- `CreatedAt` on the Payments sheet was displaying as a date without time (`3/22/26`) because Google Sheets formatted the native `Date` object as date-only. Now written as a formatted string to guarantee full timestamp display
+- Reimbursable checkbox was invisible (no check mark shown when clicked) because `.field input` CSS applied `-webkit-appearance:none` to all inputs including checkboxes. Fixed with a targeted `input[type="checkbox"]` rule restoring native appearance
+
+---
+
 ## [1.3.0] - 2026-03-14
 
 ### Added
