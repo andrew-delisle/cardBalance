@@ -4,7 +4,7 @@
 //  No hardcoded Spreadsheet ID needed.
 // ============================================================
 
-var APP_VERSION = "1.4.0";
+var APP_VERSION = "1.4.1";
 
 /** Callable from Install.gs so the version lives in exactly one place. */
 function getAppVersion() {
@@ -877,11 +877,19 @@ function normalizeBudgetToRange(amount, frequency, startDate, endDate) {
 
   var daysPerPeriod;
   switch (frequency) {
-    case "weekly":      daysPerPeriod = 7;          break;
-    case "biweekly":    daysPerPeriod = 14;         break;
+    case "weekly":      daysPerPeriod = 7;  break;
+    case "biweekly":    daysPerPeriod = 14; break;
     case "semimonthly": daysPerPeriod = 365.25 / 24; break;
     case "monthly":
-    default:            daysPerPeriod = 365.25 / 12; break;
+    default: {
+      // Use the actual number of days in the month that startDate falls in.
+      // This ensures a monthly budget always shows the exact entered amount
+      // when viewing a full calendar month, and scales proportionally for
+      // shorter ranges like pay periods or custom date ranges.
+      var s = new Date(startDate + 'T00:00:00');
+      daysPerPeriod = new Date(s.getFullYear(), s.getMonth() + 1, 0).getDate();
+      break;
+    }
   }
 
   var result = amount * (daysInRange / daysPerPeriod);
@@ -1235,9 +1243,31 @@ function getBillsData(year, month) {
     // Sort bills by due date
     bills.sort(function(a, b) { return a.dueDate.localeCompare(b.dueDate); });
 
-    // Collect unique paychecks that appear, sorted
+    // Build the paycheck list:
+    // - Floor: the last pay date strictly before the 1st of the month
+    //   (covers bills due early in the month whose paycheck falls in the prior month)
+    // - Ceiling: the last pay date on or before the last day of the month
+    //   (no reason to show next-month paychecks — no bills this month land there)
+    var monthStartYMD = toYMD(new Date(year, month - 1, 1));
+    var monthEndYMD   = toYMD(new Date(year, month, 0));
+
+    var floorPay = null;
+    var ceilPay  = null;
+    for (var pi = 0; pi < payDays.length; pi++) {
+      if (payDays[pi] < monthStartYMD) floorPay = payDays[pi];
+      if (payDays[pi] <= monthEndYMD)  ceilPay  = payDays[pi];
+    }
+
     var paycheckSet = {};
+    // Seed from bill assignments first so we never lose an assigned paycheck
     bills.forEach(function(b) { paycheckSet[b.paycheck] = true; });
+    // Add all pay dates between floor and ceiling inclusive
+    payDays.forEach(function(p) {
+      if ((floorPay && p === floorPay) ||
+          (p >= monthStartYMD && p <= (ceilPay || monthEndYMD))) {
+        paycheckSet[p] = true;
+      }
+    });
     var paychecks = Object.keys(paycheckSet).sort();
 
     // Totals per paycheck

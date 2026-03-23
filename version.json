@@ -1,7 +1,7 @@
 {
-  "version": "1.4.0",
+  "version": "1.4.1",
   "releaseDate": "2026-03-22",
-  "notes": "Reimbursable transactions — mark any transaction as reimbursable so it is excluded from budget tracking. Visible in Payables with an R badge, shown as a separate line on the Dashboard and Reports. Schema migration runs automatically on first load.",
+  "notes": "Bug fixes: monthly budget now shows exact entered amount for calendar month view, BillBalance paycheck window tightened to show only relevant pay dates, and setup step indicators now update live as you type.",
   "codeUrl": "https://raw.githubusercontent.com/andrew-delisle/cardBalance/main/Code.gs",
   "htmlUrl": "https://raw.githubusercontent.com/andrew-delisle/cardBalance/main/Index.html"
 }

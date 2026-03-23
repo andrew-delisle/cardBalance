@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.4.1] - 2026-03-22
+
+### Fixed
+- Monthly budget showing slightly over the entered amount on the dashboard (e.g. $611 instead of $600) — `normalizeBudgetToRange` was using the annual average of 30.4375 days per month. Now uses the actual number of days in the month that the window starts in, so a full calendar month always shows exactly the entered budget amount and shorter windows (pay periods, custom ranges) scale proportionally against the real month length
+- BillBalance was showing too many paychecks for a given month — the window was one full month before and after, causing Feb 12, Apr 9, and Apr 23 to appear when viewing March. Now shows exactly: the single last pay date before the 1st of the month (covers bills due at the start of the month whose paycheck falls in the prior month), plus all pay dates within the month itself
+- Setup step indicators (wizard mode) never turned green while on the active tab — `checkFormStep` had a guard that prevented updating the active step, and there were no live input listeners. Fixed by removing the guard and adding delegated `input` and `change` listeners so indicators update immediately as the user types or selects values
+
+---
+
 ## [1.4.0] - 2026-03-22
 
 ### Added

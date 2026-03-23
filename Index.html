@@ -858,7 +858,7 @@ body.mobile-landscape .snap-value { font-size:1rem; }
 
 <script>
 // ── VERSION ─────────────────────────────────────────────────────
-var HTML_VERSION = "1.4.0";
+var HTML_VERSION = "1.4.1";
 
 // ── DEBUG LOGGING ───────────────────────────────────────────────
 var DEBUG      = false;
@@ -1807,7 +1807,6 @@ function updateStepIndicators(data) {
 
 // ── SETUP ──────────────────────────────────────────────────────
 function checkFormStep(tab) {
-  // Check form state for the given step and update its indicator immediately
   var complete = false;
   if (tab === 'cards') {
     var rows = document.querySelectorAll('#setup-cards-list .setup-row');
@@ -1836,11 +1835,26 @@ function checkFormStep(tab) {
   var btn   = document.getElementById('stab-' + tab);
   var numEl = document.getElementById('step-num-' + tab);
   var nums  = { cards:1, types:2, pay:3, bills:4 };
-  if (btn && !btn.classList.contains('active')) {
-    btn.classList.toggle('complete', complete);
-  }
+
+  // Update indicator whether active or not — active tab shows green check live
+  if (btn) btn.classList.toggle('complete', complete);
   if (numEl) numEl.textContent = complete ? '\u2713' : nums[tab];
+  log('checkFormStep', 'tab=' + tab + ' complete=' + complete);
 }
+
+// Wire live input events so step indicators update as the user types
+document.addEventListener('input', function(e) {
+  var panel = e.target.closest('[id^="spanel-"]');
+  if (!panel) return;
+  var tab = panel.id.replace('spanel-', '');
+  checkFormStep(tab);
+});
+document.addEventListener('change', function(e) {
+  // Catches select and date inputs which don't fire 'input'
+  if (e.target.id === 'setup-pay-frequency' || e.target.id === 'setup-anchor' || e.target.id === 'setup-anchor2') {
+    checkFormStep('pay');
+  }
+});
 
 function showSetupTab(tab) {
   // Before switching, check the currently active step's form state
@@ -1855,7 +1869,6 @@ function showSetupTab(tab) {
     var sbtn = document.getElementById('stab-' + t);
     if (sbtn) {
       sbtn.classList.toggle('active', t === tab);
-      if (t === tab) sbtn.classList.remove('complete');
     }
     var tbtn = document.getElementById('ttab-' + t);
     if (tbtn) tbtn.classList.toggle('active', t === tab);
