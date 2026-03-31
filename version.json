@@ -1,7 +1,7 @@
 {
-  "version": "1.4.1",
-  "releaseDate": "2026-03-22",
-  "notes": "Bug fixes: monthly budget now shows exact entered amount for calendar month view, BillBalance paycheck window tightened to show only relevant pay dates, and setup step indicators now update live as you type.",
+  "version": "1.5.2",
+  "releaseDate": "2026-03-31",
+  "notes": "Major performance update — app data now loads once on boot and all pages compute from local state. Dashboard, Reports, and BillBalance no longer make server calls on navigation. All write operations update state optimistically so the UI responds instantly. New State Inspector diagnostic tool added to Tools.",
   "codeUrl": "https://raw.githubusercontent.com/andrew-delisle/cardBalance/main/Code.gs",
   "htmlUrl": "https://raw.githubusercontent.com/andrew-delisle/cardBalance/main/Index.html"
 }

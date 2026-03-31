@@ -736,6 +736,15 @@ body.mobile-landscape .snap-value { font-size:1rem; }
       <div id="config-result" class="tool-result"></div>
     </div>
     <div class="tool-card">
+      <div class="tool-card-title">&#128203; State Inspector</div>
+      <div class="tool-card-desc">Shows what is currently loaded in app state — transactions, bills, paid state, and config. Use this to verify state is correct after actions.</div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem">
+        <button class="btn btn-ghost btn-sm" onclick="runStateDiag()">Inspect State</button>
+        <button class="btn btn-ghost btn-sm" onclick="runStateDetailDiag()">Full Transactions</button>
+      </div>
+      <div id="state-result" class="tool-result"></div>
+    </div>
+    <div class="tool-card">
       <div class="tool-card-title">&#128205; Server Connection</div>
       <div class="tool-card-desc">Tests connectivity to your Google Sheet.</div>
       <button class="btn btn-ghost" onclick="runPing()">Test Connection</button>
@@ -858,7 +867,7 @@ body.mobile-landscape .snap-value { font-size:1rem; }
 
 <script>
 // ── VERSION ─────────────────────────────────────────────────────
-var HTML_VERSION = "1.4.1";
+var HTML_VERSION = "1.5.2";
 
 // ── DEBUG LOGGING ───────────────────────────────────────────────
 var DEBUG      = false;
@@ -1201,7 +1210,35 @@ function submitTransaction() {
       document.getElementById('txn-amount').value = '';
       document.getElementById('txn-reimbursable').checked = false;
       setToday('txn-date');
-      loadAppData();
+
+      // Optimistic state update — add the new transaction to appData
+      // The server returns the new ID; build the object locally so we avoid a full reload
+      if (appData && res.transactionID) {
+        var amtFloat = parseFloat(amount);
+        var newTxn = {
+          transactionID:   res.transactionID,
+          date:            date,
+          transactionDate: (function() {
+            var p = date.split('-');
+            return parseInt(p[1]) + '/' + parseInt(p[2]) + '/' + p[0];
+          })(),
+          card:            card,
+          expenseType:     type,
+          amount:          amtFloat,
+          totalPaid:       0,
+          amountOwed:      amtFloat,
+          reimbursable:    reimb
+        };
+        appData.allTransactions = appData.allTransactions || [];
+        appData.allTransactions.push(newTxn);
+        appData.transactions = appData.transactions || [];
+        appData.transactions.push(newTxn);
+        refreshPayables();
+        populateTxnFilterDropdowns();
+        log('submitTransaction', 'optimistic update | id=' + res.transactionID);
+      } else {
+        loadAppData();
+      }
     })
     .withFailureHandler(function(e) {
       btn.disabled = false; btn.textContent = 'Add Transaction';
@@ -1586,8 +1623,12 @@ function confirmDelete() {
       showToast('Transaction deleted', 'success');
       delete txnMap[id];
       delete selected[id];
-      if (appData) appData.transactions = (appData.transactions || []).filter(function(t) { return t.transactionID !== id; });
+      if (appData) {
+        appData.transactions    = (appData.transactions    || []).filter(function(t) { return t.transactionID !== id; });
+        appData.allTransactions = (appData.allTransactions || []).filter(function(t) { return t.transactionID !== id; });
+      }
       renderPayables(appData ? appData.transactions : []);
+      log('confirmDelete', 'optimistic update | id=' + id);
     })
     .withFailureHandler(function(e) {
       btn.disabled = false; btn.textContent = 'Delete Transaction';
@@ -1658,7 +1699,35 @@ function saveEdit() {
       closeEditSheet();
       if (!res || !res.success) { showToast((res && res.error) || 'Save failed', 'error'); return; }
       showToast('Transaction updated', 'success');
-      loadAppData();
+
+      // Optimistic state update — patch the transaction in both arrays
+      if (appData) {
+        var amtFloat = parseFloat(amount);
+        function patchTxn(arr) {
+          if (!arr) return;
+          for (var i = 0; i < arr.length; i++) {
+            if (arr[i].transactionID === id) {
+              arr[i].date = date;
+              arr[i].transactionDate = (function() {
+                var p = date.split('-');
+                return parseInt(p[1]) + '/' + parseInt(p[2]) + '/' + p[0];
+              })();
+              arr[i].card        = card;
+              arr[i].expenseType = type;
+              arr[i].amount      = amtFloat;
+              arr[i].amountOwed  = Math.max(amtFloat - arr[i].totalPaid, 0);
+              arr[i].reimbursable = reimb;
+              break;
+            }
+          }
+        }
+        patchTxn(appData.allTransactions);
+        patchTxn(appData.transactions);
+        refreshPayables();
+        log('saveEdit', 'optimistic update | id=' + id);
+      } else {
+        loadAppData();
+      }
     })
     .withFailureHandler(function(e) {
       btn.disabled = false; btn.textContent = 'Save Changes';
@@ -1744,7 +1813,34 @@ function submitPayments() {
       } else {
         showToast('Payment saved!', 'success');
       }
-      loadAppData();
+
+      // Optimistic state update — mark paid transactions in both arrays
+      var failedSet = {};
+      (res.errors || []).forEach(function(e) { failedSet[e.id] = true; });
+
+      validIds.forEach(function(id) {
+        if (failedSet[id]) return; // skip failed ones
+        var t = txnMap[id];
+        if (!t) return;
+        // Update allTransactions
+        if (appData && appData.allTransactions) {
+          for (var i = 0; i < appData.allTransactions.length; i++) {
+            if (appData.allTransactions[i].transactionID === id) {
+              appData.allTransactions[i].totalPaid  = appData.allTransactions[i].amount;
+              appData.allTransactions[i].amountOwed = 0;
+              break;
+            }
+          }
+        }
+      });
+
+      // Remove fully paid transactions from unpaid list
+      if (appData) {
+        appData.transactions = (appData.allTransactions || []).filter(function(t) { return t.amountOwed > 0; });
+      }
+
+      refreshPayables();
+      log('submitPayments', 'optimistic update | paid=' + (validIds.length - (res.errors || []).length));
     })
     .withFailureHandler(function(e) {
       btn.disabled = false; btn.textContent = 'Submit Payment';
@@ -2109,15 +2205,94 @@ function loadDashboard() {
     document.getElementById('dash-window').textContent = '';
     return;
   }
-  document.getElementById('dash-content').innerHTML = '<div class="spinner"></div>';
-  document.getElementById('dash-window').textContent = 'Loading...';
-  google.script.run
-    .withSuccessHandler(renderDashboard)
-    .withFailureHandler(function(e) {
-      document.getElementById('dash-content').innerHTML =
-        '<div style="color:var(--red);padding:1rem">' + esc((e && e.message) || 'Error') + '</div>';
-    })
-    .getDashboardData(dashMode);
+  if (!appData) return;
+
+  try {
+    var res = computeDashboard(dashMode);
+    renderDashboard(res);
+    log('loadDashboard', 'mode=' + dashMode + ' client-side | windowSpend=' + res.windowSpend + ' totalBudget=' + res.totalBudget);
+  } catch(e) {
+    document.getElementById('dash-content').innerHTML =
+      '<div style="color:var(--red);padding:1rem">' + esc(e.message || 'Error') + '</div>';
+    log('loadDashboard', 'error: ' + e.message);
+  }
+}
+
+function computeDashboard(mode) {
+  var txns         = appData.allTransactions || [];
+  var payDays      = appData.payDays         || [];
+  var budgets      = appData.budgets         || {};
+  var budgetFreq   = appData.budgetFrequency || 'monthly';
+  var today        = new Date();
+
+  // ── Window ───────────────────────────────────────────────────
+  var windowStart, windowEnd;
+  if (mode === 'period') {
+    if (!payDays.length) throw new Error("No pay dates found. Please set an anchor date in Setup.");
+    var period  = clientGetPayPeriod(payDays, today);
+    windowStart = period.start;
+    windowEnd   = period.end;
+  } else {
+    var y = today.getFullYear(), m = today.getMonth();
+    windowStart = y + '-' + String(m + 1).padStart(2, '0') + '-01';
+    var lastDay = new Date(y, m + 1, 0).getDate();
+    windowEnd   = y + '-' + String(m + 1).padStart(2, '0') + '-' + String(lastDay).padStart(2, '0');
+  }
+
+  // ── Total owed + owed by card ─────────────────────────────────
+  var totalOwed = 0, owedByCard = {};
+  txns.forEach(function(t) {
+    if (t.amountOwed > 0) {
+      totalOwed += t.amountOwed;
+      owedByCard[t.card] = Math.round(((owedByCard[t.card] || 0) + t.amountOwed) * 100) / 100;
+    }
+  });
+  totalOwed = Math.round(totalOwed * 100) / 100;
+
+  // ── Window spend ─────────────────────────────────────────────
+  var windowSpend = 0, windowReimbursable = 0, windowSpendByType = {};
+  txns.forEach(function(t) {
+    if (t.date >= windowStart && t.date <= windowEnd) {
+      if (t.reimbursable) {
+        windowReimbursable += t.amount;
+      } else {
+        windowSpend += t.amount;
+        windowSpendByType[t.expenseType] = Math.round(
+          ((windowSpendByType[t.expenseType] || 0) + t.amount) * 100) / 100;
+      }
+    }
+  });
+  windowSpend        = Math.round(windowSpend        * 100) / 100;
+  windowReimbursable = Math.round(windowReimbursable * 100) / 100;
+
+  // ── Budgets ───────────────────────────────────────────────────
+  var normalizedBudgets = {};
+  Object.keys(budgets).forEach(function(k) {
+    normalizedBudgets[k] = Math.round(clientNormalizeBudgetToRange(budgets[k], budgetFreq, windowStart, windowEnd) * 100) / 100;
+  });
+  var totalBudget = Math.round(
+    Object.keys(normalizedBudgets).reduce(function(s, k) { return s + normalizedBudgets[k]; }, 0) * 100
+  ) / 100;
+
+  var owedByCardArr = Object.keys(owedByCard).map(function(c) {
+    return { card: c, owed: owedByCard[c] };
+  }).sort(function(a, b) { return b.owed - a.owed; });
+
+  return {
+    success:            true,
+    mode:               mode,
+    windowStart:        windowStart,
+    windowEnd:          windowEnd,
+    totalOwed:          totalOwed,
+    totalBudget:        totalBudget,
+    windowSpend:        windowSpend,
+    windowReimbursable: windowReimbursable,
+    remaining:          Math.round((totalBudget - windowSpend) * 100) / 100,
+    owedByCard:         owedByCardArr,
+    spendByType:        windowSpendByType,
+    budgets:            normalizedBudgets,
+    budgetFrequency:    budgetFreq
+  };
 }
 
 function renderDashboard(res) {
@@ -2289,10 +2464,13 @@ function loadReports() {
   }
   var dates = getReportDates();
   updateReportDateDisplay(dates.start, dates.end);
+
+  // Brief spinner for visual feedback — computation is instant client-side
   REPORT_PANELS.forEach(function(t) { document.getElementById('report-' + t + '-panel').innerHTML = '<div class="spinner"></div>'; });
 
-  google.script.run
-    .withSuccessHandler(function(res) {
+  setTimeout(function() {
+    try {
+      var res = computeReports(dates.start, dates.end);
       reportsData = res;
       if (!res || !res.success) {
         var err = '<div style="color:var(--red);padding:1rem">' + esc((res && res.error) || 'Error') + '</div>';
@@ -2303,12 +2481,13 @@ function loadReports() {
       renderCardSpending(res);
       renderCashFlow(res);
       renderTrend(res);
-    })
-    .withFailureHandler(function(e) {
-      var err = '<div style="color:var(--red);padding:1rem">' + esc((e && e.message) || 'Error') + '</div>';
+      log('loadReports', 'client-side | start=' + dates.start + ' end=' + dates.end);
+    } catch(e) {
+      var err = '<div style="color:var(--red);padding:1rem">' + esc(e.message || 'Error') + '</div>';
       REPORT_PANELS.forEach(function(t) { document.getElementById('report-' + t + '-panel').innerHTML = err; });
-    })
-    .getReportsData(dates.start, dates.end);
+      log('loadReports', 'error: ' + e.message);
+    }
+  }, 50);
 }
 
 function renderBVA(res) {
@@ -2519,6 +2698,288 @@ function fmtDateShort(ymd) {
   return months[parseInt(p[1])-1] + ' ' + parseInt(p[2]);
 }
 
+// ── CLIENT-SIDE MATH HELPERS ───────────────────────────────────
+// Mirror of server-side normalizeBudgetToRange — same daily-rate logic.
+function clientNormalizeBudgetToRange(amount, frequency, startDate, endDate) {
+  var daysInRange = Math.round(
+    (new Date(endDate + 'T00:00:00') - new Date(startDate + 'T00:00:00')) / 86400000
+  ) + 1;
+  var daysPerPeriod;
+  switch (frequency) {
+    case 'weekly':      daysPerPeriod = 7;  break;
+    case 'biweekly':    daysPerPeriod = 14; break;
+    case 'semimonthly': daysPerPeriod = 365.25 / 24; break;
+    case 'monthly':
+    default: {
+      var s = new Date(startDate + 'T00:00:00');
+      daysPerPeriod = new Date(s.getFullYear(), s.getMonth() + 1, 0).getDate();
+      break;
+    }
+  }
+  return amount * (daysInRange / daysPerPeriod);
+}
+
+// Mirror of server-side getPayPeriod.
+function clientGetPayPeriod(payDays, today) {
+  function ymd(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+  var target = ymd(today);
+  var start  = null, end = null;
+  for (var i = 0; i < payDays.length; i++) {
+    if (payDays[i] <= target) start = payDays[i];
+    if (payDays[i] > target && end === null) end = payDays[i];
+  }
+  if (end) {
+    var endDate = new Date(end + 'T00:00:00');
+    endDate.setDate(endDate.getDate() - 1);
+    end = ymd(endDate);
+  }
+  return { start: start || target, end: end || target };
+}
+
+// Mirror of server-side shiftDate.
+function clientShiftDate(ymd, days) {
+  var d = new Date(ymd + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  var r = d;
+  return r.getFullYear() + '-' + String(r.getMonth()+1).padStart(2,'0') + '-' + String(r.getDate()).padStart(2,'0');
+}
+
+/**
+ * Client-side mirror of server-side getBillsData.
+ * Computes bill/paycheck assignments from appData.bills and appData.payDays.
+ */
+function computeBillBalance(year, month) {
+  var bills   = (appData && appData.bills)   || [];
+  var payDays = (appData && appData.payDays) || [];
+
+  if (!bills.length) return { success: true, paychecks: [], bills: [], totalsByPaycheck: {}, grandTotal: 0 };
+  if (!payDays.length) return { success: true, paychecks: [], bills: [], totalsByPaycheck: {}, grandTotal: 0,
+    warning: "No pay dates configured. Please set an anchor date in Setup → Pay Period." };
+
+  var lastDay = new Date(year, month, 0).getDate();
+
+  var assignedBills = [];
+  bills.forEach(function(b) {
+    if (!b.name) return;
+    var effectiveDay = Math.min(b.dayDue, lastDay);
+    var dueDate      = new Date(year, month - 1, effectiveDay);
+    var dueDateYMD   = dueDate.getFullYear() + '-' + String(dueDate.getMonth()+1).padStart(2,'0') + '-' + String(dueDate.getDate()).padStart(2,'0');
+
+    var paycheck = null;
+    for (var i = 0; i < payDays.length; i++) {
+      if (payDays[i] < dueDateYMD) paycheck = payDays[i];
+      else break;
+    }
+    if (!paycheck) paycheck = payDays[0];
+
+    assignedBills.push({ name: b.name, amount: b.amount, dayDue: b.dayDue, dueDate: dueDateYMD, paycheck: paycheck });
+  });
+
+  assignedBills.sort(function(a, b) { return a.dueDate.localeCompare(b.dueDate); });
+
+  // Build paycheck window — floor + month range + ceiling
+  var monthStartYMD = year + '-' + String(month).padStart(2,'0') + '-01';
+  var monthEnd      = new Date(year, month, 0);
+  var monthEndYMD   = monthEnd.getFullYear() + '-' + String(monthEnd.getMonth()+1).padStart(2,'0') + '-' + String(monthEnd.getDate()).padStart(2,'0');
+
+  var floorPay = null, ceilPay = null;
+  for (var pi = 0; pi < payDays.length; pi++) {
+    if (payDays[pi] < monthStartYMD) floorPay = payDays[pi];
+    if (payDays[pi] <= monthEndYMD)  ceilPay  = payDays[pi];
+  }
+
+  var paycheckSet = {};
+  assignedBills.forEach(function(b) { paycheckSet[b.paycheck] = true; });
+  payDays.forEach(function(p) {
+    if ((floorPay && p === floorPay) || (p >= monthStartYMD && p <= (ceilPay || monthEndYMD))) {
+      paycheckSet[p] = true;
+    }
+  });
+  var paychecks = Object.keys(paycheckSet).sort();
+
+  var totalsByPaycheck = {}, grandTotal = 0;
+  paychecks.forEach(function(p) { totalsByPaycheck[p] = 0; });
+  assignedBills.forEach(function(b) {
+    totalsByPaycheck[b.paycheck] = Math.round(((totalsByPaycheck[b.paycheck] || 0) + b.amount) * 100) / 100;
+    grandTotal = Math.round((grandTotal + b.amount) * 100) / 100;
+  });
+
+  log('computeBillBalance', 'year=' + year + ' month=' + month + ' bills=' + assignedBills.length + ' paychecks=' + paychecks.length);
+  return { success: true, paychecks: paychecks, bills: assignedBills, totalsByPaycheck: totalsByPaycheck, grandTotal: grandTotal };
+}
+
+/**
+ * Client-side mirror of server-side getReportsData.
+ * Computes all report panels from appData.allTransactions and appData config.
+ */
+function computeReports(startDate, endDate) {
+  var txns         = (appData && appData.allTransactions) || [];
+  var bills        = (appData && appData.bills)           || [];
+  var payDays      = (appData && appData.payDays)         || [];
+  var budgets      = (appData && appData.budgets)         || {};
+  var budgetFreq   = (appData && appData.budgetFrequency) || 'monthly';
+  var cards        = (appData && appData.cards)           || [];
+  var cardColors   = (appData && appData.cardColors)      || {};
+  var now          = new Date();
+
+  // Default to current month
+  if (!startDate || !endDate) {
+    var ym = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+    startDate = ym + '-01';
+    var ld = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+    endDate = ym + '-' + String(ld).padStart(2,'0');
+  }
+
+  // Available months from all transactions
+  var monthSet = {};
+  txns.forEach(function(t) { if (t.date) monthSet[t.date.substring(0,7)] = true; });
+  var availableMonths = Object.keys(monthSet).sort();
+
+  var filtered    = txns.filter(function(t) { return t.date >= startDate && t.date <= endDate; });
+  var startYM     = startDate.substring(0,7);
+  var endYM       = endDate.substring(0,7);
+  var rangeMonths = availableMonths.filter(function(ym) { return ym >= startYM && ym <= endYM; });
+
+  // ── BVA ──────────────────────────────────────────────────────
+  var normalizedBudgets = {};
+  Object.keys(budgets).forEach(function(k) {
+    normalizedBudgets[k] = Math.round(clientNormalizeBudgetToRange(budgets[k], budgetFreq, startDate, endDate) * 100) / 100;
+  });
+
+  var actualByType = {}, txnCountByType = {}, reimbursableTotal = 0, reimbursableCount = 0;
+  filtered.forEach(function(t) {
+    if (t.reimbursable) {
+      reimbursableTotal += t.amount;
+      reimbursableCount++;
+    } else {
+      actualByType[t.expenseType]   = Math.round(((actualByType[t.expenseType]   || 0) + t.amount) * 100) / 100;
+      txnCountByType[t.expenseType] = (txnCountByType[t.expenseType] || 0) + 1;
+    }
+  });
+  reimbursableTotal = Math.round(reimbursableTotal * 100) / 100;
+
+  var allTypes = Object.keys(normalizedBudgets).concat(Object.keys(actualByType))
+    .filter(function(v, i, a) { return a.indexOf(v) === i; }).sort();
+
+  var budgetVsActual = allTypes.map(function(type) {
+    var budget = normalizedBudgets[type] || 0;
+    var actual = actualByType[type]      || 0;
+    return {
+      expenseType: type,
+      budget:      budget,
+      actual:      actual,
+      variance:    Math.round((budget - actual) * 100) / 100,
+      pctUsed:     budget > 0 ? Math.round((actual / budget) * 1000) / 10 : null,
+      txnCount:    txnCountByType[type] || 0
+    };
+  });
+
+  // ── STACKED BAR ───────────────────────────────────────────────
+  var allExpenseTypes = [];
+  txns.forEach(function(t) { if (allExpenseTypes.indexOf(t.expenseType) === -1) allExpenseTypes.push(t.expenseType); });
+  allExpenseTypes.sort();
+
+  var stackedBar = rangeMonths.map(function(ym) {
+    var byType = {};
+    txns.forEach(function(t) {
+      if (t.date && t.date.substring(0,7) === ym)
+        byType[t.expenseType] = Math.round(((byType[t.expenseType] || 0) + t.amount) * 100) / 100;
+    });
+    return { month: ym, byType: byType };
+  });
+
+  // ── CUMULATIVE TREND ──────────────────────────────────────────
+  var runningTotal = 0;
+  var cumulative = rangeMonths.map(function(ym) {
+    var monthTotal = 0, monthReimbursable = 0;
+    txns.forEach(function(t) {
+      if (t.date && t.date.substring(0,7) === ym) {
+        if (t.reimbursable) monthReimbursable += t.amount;
+        else                monthTotal        += t.amount;
+      }
+    });
+    runningTotal += monthTotal;
+    return {
+      month:             ym,
+      monthTotal:        Math.round(monthTotal        * 100) / 100,
+      monthReimbursable: Math.round(monthReimbursable * 100) / 100,
+      cumulative:        Math.round(runningTotal      * 100) / 100
+    };
+  });
+
+  // ── SPENDING BY CARD ──────────────────────────────────────────
+  var spendByCard = {}, paidByCard = {};
+  filtered.forEach(function(t) {
+    spendByCard[t.card] = Math.round(((spendByCard[t.card] || 0) + t.amount)    * 100) / 100;
+    paidByCard[t.card]  = Math.round(((paidByCard[t.card]  || 0) + t.totalPaid) * 100) / 100;
+  });
+  var cardSpending = cards.map(function(card) {
+    var charged = spendByCard[card] || 0;
+    var paid    = paidByCard[card]  || 0;
+    return { card: card, charged: charged, paid: paid, balance: Math.round((charged - paid) * 100) / 100 };
+  }).filter(function(c) { return c.charged > 0; });
+
+  // ── PAY PERIOD CASH FLOW ──────────────────────────────────────
+  var cashFlow = [];
+  for (var pi = 0; pi < payDays.length; pi++) {
+    var periodStart = payDays[pi];
+    var periodEnd   = pi + 1 < payDays.length ? clientShiftDate(payDays[pi + 1], -1) : clientShiftDate(payDays[pi], 13);
+    if (periodEnd < startDate || periodStart > endDate) continue;
+
+    var billsTotal = 0, billsDetail = [];
+    bills.forEach(function(b) {
+      var pStart     = new Date(periodStart + 'T00:00:00');
+      var dueYear    = pStart.getFullYear();
+      var dueMonth   = pStart.getMonth() + 1;
+      var maxDay     = new Date(dueYear, dueMonth, 0).getDate();
+      var clampedDay = Math.min(b.dayDue, maxDay);
+      var dueDate    = dueYear + '-' + String(dueMonth).padStart(2,'0') + '-' + String(clampedDay).padStart(2,'0');
+      if (dueDate >= periodStart && dueDate <= periodEnd) {
+        billsTotal += b.amount;
+        billsDetail.push({ name: b.name, amount: b.amount });
+      }
+    });
+
+    var txnTotal = 0;
+    filtered.forEach(function(t) {
+      if (t.date >= periodStart && t.date <= periodEnd) txnTotal += t.amount;
+    });
+    txnTotal = Math.round(txnTotal * 100) / 100;
+
+    cashFlow.push({
+      periodStart:  periodStart,
+      periodEnd:    periodEnd,
+      bills:        Math.round(billsTotal * 100) / 100,
+      billsDetail:  billsDetail,
+      transactions: txnTotal,
+      total:        Math.round((billsTotal + txnTotal) * 100) / 100
+    });
+  }
+
+  var totalBudget = Math.round(
+    Object.keys(normalizedBudgets).reduce(function(s, k) { return s + normalizedBudgets[k]; }, 0) * 100
+  ) / 100;
+
+  log('computeReports', 'start=' + startDate + ' end=' + endDate + ' txns=' + filtered.length + ' months=' + rangeMonths.length);
+
+  return {
+    success:           true,
+    startDate:         startDate,
+    endDate:           endDate,
+    availableMonths:   availableMonths,
+    budgetVsActual:    budgetVsActual,
+    reimbursableTotal: reimbursableTotal,
+    reimbursableCount: reimbursableCount,
+    stackedBar:        stackedBar,
+    cumulative:        cumulative,
+    allExpenseTypes:   allExpenseTypes,
+    totalBudget:       totalBudget,
+    cardSpending:      cardSpending,
+    cardColors:        cardColors,
+    cashFlow:          cashFlow
+  };
+}
+
 // ── FORMAT HELPERS ──────────────────────────────────────────────
 function fmt(n) {
   var s = (Math.round((n||0)*100)/100).toFixed(2);
@@ -2597,36 +3058,45 @@ function loadBillBalance() {
   if (!ym) return;
   var year  = parseInt(ym.split('-')[0]);
   var month = parseInt(ym.split('-')[1]);
-  document.getElementById('billbalance-content').innerHTML = '<div class="spinner"></div>';
 
-  // Fetch bills data and paid state in parallel
-  var billsRes = null, paidRes = null;
-  function tryRender() {
-    if (billsRes !== null && paidRes !== null) renderBillBalance(billsRes, paidRes);
+  try {
+    var billsRes = computeBillBalance(year, month);
+    var paidRes  = { paid: (appData && appData.billPaidState && appData.billPaidState.paid) || [] };
+    renderBillBalance(billsRes, paidRes);
+    log('loadBillBalance', 'year=' + year + ' month=' + month + ' client-side');
+  } catch(e) {
+    document.getElementById('billbalance-content').innerHTML =
+      '<div style="color:var(--red);padding:.75rem">' + esc(e.message || 'Error') + '</div>';
+    log('loadBillBalance', 'error: ' + e.message);
   }
-  google.script.run
-    .withSuccessHandler(function(r) { billsRes = r; tryRender(); })
-    .withFailureHandler(function(e) {
-      document.getElementById('billbalance-content').innerHTML =
-        '<div style="color:var(--red);padding:.75rem">' + esc((e && e.message) || 'Error') + '</div>';
-    })
-    .getBillsData(year, month);
-  google.script.run
-    .withSuccessHandler(function(r) { paidRes = r; tryRender(); })
-    .withFailureHandler(function() { paidRes = { paid: [] }; tryRender(); })
-    .getBillPaidState();
 }
 
 function toggleBillPaid(name, checkbox) {
   var isPaid = checkbox.checked;
-  var row    = checkbox.closest('tr');
+
+  // Update row appearance immediately
+  var row = checkbox.closest('tr');
   if (row) row.classList.toggle('bb-row-paid', isPaid);
-  // Recalculate visible totals
+
+  // Update appData.billPaidState optimistically
+  if (appData) {
+    if (!appData.billPaidState) appData.billPaidState = { month: '', paid: [] };
+    var paid = appData.billPaidState.paid || [];
+    var idx  = paid.indexOf(name);
+    if (isPaid && idx === -1)  paid.push(name);
+    if (!isPaid && idx !== -1) paid.splice(idx, 1);
+    appData.billPaidState.paid = paid;
+  }
+
+  // Recalculate totals from updated DOM
   recalcBillTotals();
-  // Persist to server
+
+  // Persist to server — fire and forget
   google.script.run
-    .withFailureHandler(function() { /* silent */ })
+    .withFailureHandler(function() { log('toggleBillPaid', 'server error for: ' + name); })
     .setBillPaid({ name: name, isPaid: isPaid });
+
+  log('toggleBillPaid', 'name=' + name + ' isPaid=' + isPaid);
 }
 
 function recalcBillTotals() {
@@ -2720,29 +3190,113 @@ function renderBillBalance(res, paidState) {
 // ── DIAGNOSTICS ────────────────────────────────────────────────
 function runConfigDiag() {
   var el = document.getElementById('config-result');
-  el.className = 'tool-result'; el.style.display = 'block'; el.textContent = 'Loading...';
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.success) { el.className = 'tool-result err'; el.textContent = 'Error: ' + ((res && res.error) || 'unknown'); return; }
-      el.className = 'tool-result ok';
-      var lines = [
-        'Cards (' + res.cards.length + '): ' + res.cards.join(', '),
-        'Types (' + res.expenseTypes.length + '): ' + res.expenseTypes.join(', '),
-        'Budgets: ' + JSON.stringify(res.budgets),
-        'Pay Frequency: '    + (res.payFrequency    || 'not set'),
-        'Budget Frequency: ' + (res.budgetFrequency || 'not set'),
-        'isConfigured: '     + res.isConfigured,
-        'setupComplete: '    + res.setupComplete,
-        'Anchor 1: ' + (res.anchorDate  || 'not set'),
-        'Anchor 2: ' + (res.anchorDate2 || 'not set'),
-        'Pay days loaded: ' + res.payDays.length,
-        'First 3 pay days: ' + (res.payDays.slice(0, 3).join(', ') || 'none'),
-        'cardColors in memory: ' + JSON.stringify(cardColors)
-      ];
-      el.textContent = lines.join('\n');
-    })
-    .withFailureHandler(function(e) { el.className = 'tool-result err'; el.textContent = 'Failure: ' + ((e && e.message) || JSON.stringify(e)); })
-    .getAppData();
+  el.className = 'tool-result'; el.style.display = 'block';
+  if (!appData) { el.className = 'tool-result err'; el.textContent = 'appData is null — app has not loaded yet.'; return; }
+  el.className = 'tool-result ok';
+  var lines = [
+    'Cards (' + (appData.cards||[]).length + '): ' + (appData.cards||[]).join(', '),
+    'Types (' + (appData.expenseTypes||[]).length + '): ' + (appData.expenseTypes||[]).join(', '),
+    'Budgets: ' + JSON.stringify(appData.budgets||{}),
+    'Pay Frequency: '    + (appData.payFrequency    || 'not set'),
+    'Budget Frequency: ' + (appData.budgetFrequency || 'not set'),
+    'isConfigured: '     + appData.isConfigured,
+    'setupComplete: '    + appData.setupComplete,
+    'Anchor 1: ' + (appData.anchorDate  || 'not set'),
+    'Anchor 2: ' + (appData.anchorDate2 || 'not set'),
+    'Pay days loaded: '  + (appData.payDays||[]).length,
+    'First 3 pay days: ' + ((appData.payDays||[]).slice(0,3).join(', ') || 'none'),
+    'cardColors in memory: ' + JSON.stringify(cardColors),
+    '',
+    '-- Source: appData (client state, no server call) --'
+  ];
+  el.textContent = lines.join('\n');
+}
+
+function runStateDiag() {
+  var el = document.getElementById('state-result');
+  el.className = 'tool-result ok'; el.style.display = 'block';
+  if (!appData) { el.className = 'tool-result err'; el.textContent = 'appData is null — app has not loaded yet.'; return; }
+
+  var allTxns    = appData.allTransactions || [];
+  var unpaidTxns = appData.transactions    || [];
+  var bills      = appData.bills           || [];
+  var paidState  = appData.billPaidState   || { month: '', paid: [] };
+
+  // Verify allTransactions and transactions are consistent
+  var derivedUnpaid = allTxns.filter(function(t) { return t.amountOwed > 0; });
+  var stateMatch     = derivedUnpaid.length === unpaidTxns.length;
+  var mismatchedIds  = [];
+  if (!stateMatch) {
+    var unpaidIds = {};
+    unpaidTxns.forEach(function(t) { unpaidIds[t.transactionID] = true; });
+    derivedUnpaid.forEach(function(t) {
+      if (!unpaidIds[t.transactionID]) mismatchedIds.push(t.transactionID);
+    });
+  }
+
+  // Sample last 3 transactions from each list
+  var lastAll    = allTxns.slice(-3).map(function(t) { return t.transactionID + ' owed=$' + t.amountOwed.toFixed(2) + ' reimb=' + t.reimbursable; });
+  var lastUnpaid = unpaidTxns.slice(-3).map(function(t) { return t.transactionID + ' owed=$' + t.amountOwed.toFixed(2); });
+
+  var lines = [
+    '── TRANSACTIONS ──',
+    'allTransactions count: '  + allTxns.length,
+    'transactions (unpaid): '  + unpaidTxns.length,
+    'derived unpaid count: '   + derivedUnpaid.length,
+    'state consistent: '       + stateMatch + (mismatchedIds.length ? ' | mismatched IDs: ' + mismatchedIds.join(', ') : ''),
+    'last 3 allTransactions: ' + (lastAll.join(' | ') || 'none'),
+    'last 3 unpaid: '          + (lastUnpaid.join(' | ') || 'none'),
+    '',
+    '── BILLS ──',
+    'bills count: '            + bills.length,
+    'bill names: '             + bills.map(function(b) { return b.name; }).join(', '),
+    'billPaidState month: '    + paidState.month,
+    'billPaidState paid: '     + (paidState.paid||[]).join(', '),
+    '',
+    '── CONFIG ──',
+    'cards: '                  + (appData.cards||[]).join(', '),
+    'budgetFrequency: '        + (appData.budgetFrequency || 'not set'),
+    'payFrequency: '           + (appData.payFrequency    || 'not set'),
+    'payDays loaded: '         + (appData.payDays||[]).length,
+    'scriptVersion: '          + (appData.scriptVersion   || 'unknown'),
+    'htmlVersion: '            + HTML_VERSION,
+    '',
+    '── WRITE OPS LOG (last 5) ──'
+  ];
+
+  // Pull last 5 state-related log entries if debug is on
+  var stateLogs = _logBuffer.filter(function(e) {
+    return e.indexOf('optimistic') !== -1 || e.indexOf('computeDashboard') !== -1 ||
+           e.indexOf('computeReports') !== -1 || e.indexOf('computeBillBalance') !== -1 ||
+           e.indexOf('loadBillBalance') !== -1 || e.indexOf('loadDashboard') !== -1 ||
+           e.indexOf('submitTransaction') !== -1 || e.indexOf('saveEdit') !== -1 ||
+           e.indexOf('confirmDelete') !== -1 || e.indexOf('submitPayments') !== -1 ||
+           e.indexOf('toggleBillPaid') !== -1;
+  }).slice(-5);
+  lines = lines.concat(stateLogs.length ? stateLogs : ['(enable logging to see write ops)']);
+
+  el.textContent = lines.join('\n');
+}
+
+function runStateDetailDiag() {
+  var el = document.getElementById('state-result');
+  el.className = 'tool-result ok'; el.style.display = 'block';
+  if (!appData || !appData.allTransactions) {
+    el.className = 'tool-result err';
+    el.textContent = 'appData.allTransactions is empty or null.';
+    return;
+  }
+  var lines = ['── ALL TRANSACTIONS (' + appData.allTransactions.length + ') ──'];
+  appData.allTransactions.forEach(function(t) {
+    lines.push(
+      t.transactionID + ' | ' + t.date + ' | ' + t.card + ' | ' + t.expenseType +
+      ' | $' + t.amount.toFixed(2) +
+      ' | paid=$' + t.totalPaid.toFixed(2) +
+      ' | owed=$' + t.amountOwed.toFixed(2) +
+      (t.reimbursable ? ' | R' : '')
+    );
+  });
+  el.textContent = lines.join('\n');
 }
 
 function runScaleDiag() {

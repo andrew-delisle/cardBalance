@@ -7,6 +7,64 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [1.5.2] - 2026-03-31
+
+### Fixed
+- BillBalance check/uncheck visual not updating — checking or unchecking a bill now immediately applies the green color and strikethrough text without requiring a page refresh. The `bb-row-paid` CSS class was not being toggled on the row when state was updated
+
+---
+
+## [1.5.1] - 2026-03-31
+
+### Fixed
+- Missing version bump from 1.5.0 work
+
+---
+
+## [1.5.0] - 2026-03-31
+
+### Added
+- `getAllTransactionsForClient()` — new server function that reads both the Transactions and Payments sheets exactly once, folds in the `ensureColumn` schema migration, builds the paid map once, and returns both the full transaction list (`all`) and the unpaid subset in a single pass. Eliminates the duplicate sheet reads that were happening on every app load
+- `allTransactions` added to `getAppData` payload — full transaction history (paid + unpaid) now included in the initial boot load alongside the existing `transactions` (unpaid only) array
+- `billPaidState` added to `getAppData` payload — bill paid state now loaded on boot, eliminating the separate `getBillPaidState` server call when BillBalance opened
+- `clientNormalizeBudgetToRange` — client-side mirror of the server-side budget scaling function
+- `clientGetPayPeriod` — client-side mirror of the server-side pay period calculation
+- `clientShiftDate` — client-side mirror of the server-side date shift utility
+- `computeDashboard(mode)` — full client-side dashboard calculation reading from `appData`. Eliminates `getDashboardData` server call on every dashboard navigation and mode switch
+- `computeBillBalance(year, month)` — full client-side mirror of `getBillsData`. Eliminates two server calls (bills data + paid state) every time BillBalance opened or month changed
+- `computeReports(startDate, endDate)` — full client-side mirror of `getReportsData` covering all four report panels (BVA, card spending, cash flow, trend). Eliminates server call on every report navigation and date range change
+- Optimistic state updates for all write operations — after add, edit, delete, and pay, the UI updates immediately from local state without a server round trip:
+  - Add transaction: pushes new txn object into both `appData.allTransactions` and `appData.transactions`, refreshes Payables
+  - Edit transaction: patches the txn in both arrays, refreshes Payables
+  - Delete transaction: filters from both arrays, refreshes Payables
+  - Mark paid: updates `amountOwed`/`totalPaid` on affected txns in `allTransactions`, rebuilds `transactions` from filtered result
+  - Toggle bill paid: updates `appData.billPaidState` and toggles row CSS class immediately
+- State Inspector diagnostic tool (Tools page) — two buttons: **Inspect State** shows transaction counts, consistency check between `allTransactions` and `transactions`, bill state, config summary, and last 5 state-related log entries; **Full Transactions** dumps every transaction in `allTransactions` with all fields for verification
+- `runConfigDiag` now reads from `appData` client state instead of making a server call
+
+### Changed
+- `getUnpaidTransactionsInternal` now delegates to `getAllTransactionsForClient` — no separate sheet read
+- `loadDashboard` replaced with client-side version — no spinner, instant render
+- `loadBillBalance` replaced with client-side version — reads `appData.bills` and `appData.billPaidState`
+- `loadReports` replaced with client-side version — 50ms spinner for visual feedback, then instant client-side compute
+- `toggleBillPaid` now updates `appData.billPaidState` and fires server in background (fire-and-forget)
+
+### Server calls — before vs after
+| Operation | Before | After |
+|---|---|---|
+| Dashboard navigation | `getDashboardData` server call | client-side, instant |
+| Dashboard mode switch | `getDashboardData` server call | client-side, instant |
+| Reports navigation | `getReportsData` server call | client-side, ~50ms spinner |
+| Reports date change | `getReportsData` server call | client-side, ~50ms spinner |
+| BillBalance open | `getBillsData` + `getBillPaidState` (2 calls) | client-side, instant |
+| BillBalance month change | `getBillsData` + `getBillPaidState` (2 calls) | client-side, instant |
+| After add transaction | `loadAppData` full reload | optimistic state patch |
+| After edit transaction | `loadAppData` full reload | optimistic state patch |
+| After mark paid | `loadAppData` full reload | optimistic state patch |
+| Config diagnostic | `getAppData` server call | reads from state |
+
+---
+
 ## [1.4.1] - 2026-03-22
 
 ### Fixed

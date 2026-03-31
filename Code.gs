@@ -4,7 +4,7 @@
 //  No hardcoded Spreadsheet ID needed.
 // ============================================================
 
-var APP_VERSION = "1.4.1";
+var APP_VERSION = "1.5.2";
 
 /** Callable from Install.gs so the version lives in exactly one place. */
 function getAppVersion() {
@@ -256,11 +256,6 @@ function getAppData() {
   try {
     var config = readConfig();
 
-    // Schema migration: ensure Reimbursable column exists on Transactions sheet.
-    // Safe to call on every load — exits immediately if column already present.
-    var txnSheetForMigration = getSheetOrNull(SHEET.TRANSACTIONS);
-    if (txnSheetForMigration) ensureColumn(txnSheetForMigration, "Reimbursable", "false");
-
     // Guard: ensure config arrays are always arrays even if readConfig returns partial data
     var safeCards       = Array.isArray(config.cards)       ? config.cards       : [];
     var safeTypes       = Array.isArray(config.expenseTypes) ? config.expenseTypes : [];
@@ -268,7 +263,11 @@ function getAppData() {
     var safeCardColors  = (config.cardColors && typeof config.cardColors === "object") ? config.cardColors : {};
     var safeBudgets     = (config.budgets    && typeof config.budgets    === "object") ? config.budgets    : {};
 
-    var unpaid = getUnpaidTransactionsInternal();
+    // Single sheet read — returns both all transactions and unpaid subset.
+    // ensureColumn (Reimbursable migration) is folded into this call.
+    var txnResult = getAllTransactionsForClient();
+    var unpaid    = txnResult.unpaid;
+    var allTxns   = txnResult.all;
 
     // Load bills for Setup pre-population
     var billSheet = getSheetOrNull(SHEET.BILLS);
@@ -276,6 +275,23 @@ function getAppData() {
     var bills = billRows.map(function(r) {
       return { name: safeStr(r["BillName"]), amount: safeFloat(r["Amount"]), dayDue: parseInt(safeStr(r["DayDue"])) || 1 };
     }).filter(function(b) { return b.name; });
+
+    // Load bill paid state — folded in so no separate client call needed
+    var billPaidState = { month: '', paid: [] };
+    try {
+      var props = PropertiesService.getUserProperties();
+      var raw   = props.getProperty('billPaidState');
+      if (raw) {
+        var parsed       = JSON.parse(raw);
+        var now          = new Date();
+        var currentMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+        billPaidState = (parsed.month === currentMonth)
+          ? { month: parsed.month, paid: parsed.paid || [] }
+          : { month: currentMonth, paid: [] };
+      }
+    } catch(e) {
+      Logger.log("getAppData | billPaidState load error: " + e.message);
+    }
 
     var isConfigured = safeCards.length > 0 && safeTypes.length > 0 && !!config.payFrequency;
 
@@ -306,7 +322,9 @@ function getAppData() {
       payFrequency:    config.payFrequency    || "",
       budgetFrequency: config.budgetFrequency || "monthly",
       transactions:    unpaid,
-      bills:           bills
+      allTransactions: allTxns,
+      bills:           bills,
+      billPaidState:   billPaidState
     }));
   } catch(err) {
     return { success: false, error: "getAppData failed: " + err.message };
@@ -317,48 +335,65 @@ function getAppData() {
 //  TRANSACTIONS
 // ============================================================
 function getUnpaidTransactionsInternal() {
+  return getAllTransactionsForClient().unpaid;
+}
+
+/**
+ * Reads the Transactions and Payments sheets exactly once.
+ * Runs ensureColumn for Reimbursable in the same pass.
+ * Returns both the full transaction list and the unpaid subset
+ * so callers don't need separate sheet reads.
+ *
+ * Returns: { all: [...], unpaid: [...] }
+ */
+function getAllTransactionsForClient() {
   var txnSheet = getSheetOrNull(SHEET.TRANSACTIONS);
   var paySheet = getSheetOrNull(SHEET.PAYMENTS);
-  if (!txnSheet || txnSheet.getLastRow() <= 1) return [];
+  if (!txnSheet || txnSheet.getLastRow() <= 1) return { all: [], unpaid: [] };
+
+  // ── Schema migration folded in — one sheet read covers both ──
+  ensureColumn(txnSheet, "Reimbursable", "false");
 
   var txnData = sheetToObjects(txnSheet);
   var payData = (paySheet && paySheet.getLastRow() > 1) ? sheetToObjects(paySheet) : [];
 
+  // Build paidMap once
   var paidMap = {};
   payData.forEach(function(p) {
-    var id  = safeStr(p["TransactionID"]);
-    var amt = safeFloat(p["Amount"]);
-    paidMap[id] = (paidMap[id] || 0) + amt;
+    var id = safeStr(p["TransactionID"]);
+    paidMap[id] = Math.round(((paidMap[id] || 0) + safeFloat(p["Amount"])) * 100) / 100;
   });
 
+  var all    = [];
   var unpaid = [];
+
   txnData.forEach(function(t) {
     var id       = safeStr(t["TransactionID"]);
     var original = safeFloat(t["Amount"]);
     var paid     = Math.round((paidMap[id] || 0) * 100) / 100;
     var owed     = Math.round((original - paid) * 100) / 100;
-    if (owed > 0) {
-      var rawDate = parseSheetDate(t["TransactionDate"]);
-      var isoDate = rawDate ? toYMD(rawDate) : safeStr(t["TransactionDate"]);
-      unpaid.push({
-        transactionID:   id,
-        date:            isoDate,
-        transactionDate: dateToStr(t["TransactionDate"]),
-        card:            safeStr(t["CreditCard"]),
-        expenseType:     safeStr(t["ExpenseType"]),
-        originalAmount:  original,
-        totalPaid:       paid,
-        amountOwed:      owed,
-        reimbursable:    safeStr(t["Reimbursable"]) === "true"
-      });
-    }
+    var rawDate  = parseSheetDate(t["TransactionDate"]);
+    var isoDate  = rawDate ? toYMD(rawDate) : safeStr(t["TransactionDate"]);
+    var reimb    = safeStr(t["Reimbursable"]) === "true";
+
+    var txnObj = {
+      transactionID:   id,
+      date:            isoDate,
+      transactionDate: dateToStr(t["TransactionDate"]),
+      card:            safeStr(t["CreditCard"]),
+      expenseType:     safeStr(t["ExpenseType"]),
+      amount:          original,
+      totalPaid:       paid,
+      amountOwed:      Math.max(owed, 0),
+      reimbursable:    reimb
+    };
+
+    all.push(txnObj);
+    if (owed > 0) unpaid.push(txnObj);
   });
-  Logger.log("getUnpaidTransactionsInternal | count=%s | sample.date=%s | sample.transactionDate=%s",
-    unpaid.length,
-    unpaid.length ? unpaid[0].date : "n/a",
-    unpaid.length ? unpaid[0].transactionDate : "n/a"
-  );
-  return unpaid;
+
+  Logger.log("getAllTransactionsForClient | all=%s | unpaid=%s", all.length, unpaid.length);
+  return { all: all, unpaid: unpaid };
 }
 
 function submitTransaction(payload) {
@@ -861,8 +896,8 @@ function getPayPeriod(payDays, targetDate) {
 /**
  * Scales a per-period budget amount to match an arbitrary date range.
  * Converts to a daily rate first, then multiplies by the number of days
- * in the range. Used by both getDashboardData and getReportsData so that
- * budget figures are always accurate to the exact window being viewed.
+ * in the range. Used by getReportsData server-side. The dashboard uses
+ * the equivalent clientNormalizeBudgetToRange in Index.html.
  *
  * @param {number} amount        - Raw budget amount per budgetFrequency period
  * @param {string} frequency     - budgetFrequency: weekly/biweekly/semimonthly/monthly
